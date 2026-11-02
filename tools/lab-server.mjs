@@ -17,7 +17,8 @@ createServer(async (req, res) => {
   try {
     if (req.method === 'POST' && (url.pathname === '/__shot' || url.pathname === '/__press')) {
       const name = basename(url.searchParams.get('name') || 'shot.png');
-      const dir = url.pathname === '/__shot' ? shots : press;
+      const sub = (url.searchParams.get('dir') || '').replace(/[^a-z0-9/_-]/gi, '');
+      const dir = url.pathname === '/__shot' ? (sub ? join(root, '..', sub) : shots) : press;
       const chunks = [];
       for await (const c of req) chunks.push(c);
       await mkdir(dir, { recursive: true });

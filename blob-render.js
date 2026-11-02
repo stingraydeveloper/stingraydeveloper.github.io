@@ -1,22 +1,13 @@
-// The blob in WebGL: one draw call of camera-facing ribbons whose texture is a strip of real numbers.
-// Mipmaps are the level of detail: far away a strand reads as a pencil line, close up it is digits.
+// The blob in WebGL. Strands are camera-facing ribbons whose texture is a strip of real numbers, and
+// mipmaps are the level of detail: far away a strand reads as a pencil line, close up it is digits.
+// The canvas is transparent: the sheet of paper is the page itself, so the same drawing sits on the
+// page, in a saved image, or anywhere else without a rectangle around it.
 import * as THREE from 'three';
-import { generateBlob, packStrands, coreMesh, surfacePoint, surfaceNormal, weightRows, shellRadius } from './blob-geometry.js';
+import { coreMesh, surfacePoint, surfaceNormal, weightRows } from './blob-geometry.js';
 
-export const ATLAS = { size: 4096, rows: 40 };
+export const FOV = 22;
 
-export const EYES = {
-  // rx, ry in world units; x, y place the eye on the front of the body
-  bean: { x: 0.38, y: -0.13, rx: 0.088, ry: 0.12, tilt: 0.0, rim: 0, lid: 0 },
-  pebble: { x: 0.47, y: -0.21, rx: 0.116, ry: 0.122, tilt: 0.0, rim: 0, lid: 0 },
-  button: { x: 0.43, y: -0.17, rx: 0.112, ry: 0.118, tilt: 0.0, rim: 0.16, lid: 0 },
-  sleepy: { x: 0.44, y: -0.19, rx: 0.108, ry: 0.112, tilt: 0.0, rim: 0, lid: 0.26 },
-};
-
-export const BACKGROUNDS = {
-  graphite: { paper: 0, base: '#191613', haze: '#7f5519', hazeAmt: 0.38, grain: 0.05 },
-  paper: { paper: 1, base: '#ece4d3', haze: '#eedcb0', hazeAmt: 0.7, grain: 0.032 },
-};
+export const EYE = { x: 0.415, y: -0.2, rx: 0.09, ry: 0.096 };
 
 // Same function as the shader's breathe(), for things placed from JS.
 export function breatheJS(p, b) {
@@ -40,47 +31,61 @@ const BREATHE_GLSL = /* glsl */`
 const NOISE_GLSL = /* glsl */`
   float hash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
   float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
-    return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
-  float fbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.03 + 11.7; a *= 0.5; } return s; }`;
+    return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }`;
 
 const STRAND_VERT = /* glsl */`
   precision highp float;
-  in vec3 position; in vec3 aT; in vec4 aA; in vec4 aB;
+  in vec3 position; in vec4 aT; in vec3 aA; in vec4 aB; in vec3 aC;
   uniform mat4 modelViewMatrix, projectionMatrix; uniform mat3 normalMatrix;
-  uniform vec2 uViewport; uniform float uTime, uFocus, uAperture, uMaxCoc, uMinPx, uRowTex, uRows, uFarGain, uDrift;
-  uniform float uPaper, uMassSolid; uniform vec3 uKey; uniform vec4 uEyeL, uEyeR; uniform vec2 uEyeZ; uniform float uBlink, uFaceLift;
+  uniform vec2 uViewport; uniform float uTime, uFocus, uAperture, uMaxCoc, uMinPx, uRowTex, uFarGain, uDrift;
+  uniform float uMassSolid, uBody, uBlink, uFlow, uAlpha, uTaut, uLead0, uFlicker, uSag;
+  uniform vec3 uKey, uLeadA, uLeadB, uClearP; uniform float uClear;
+  uniform vec4 uEyeL, uEyeR; uniform vec2 uEyeZ; uniform vec2 uDraw;
   ${BREATHE_GLSL}
   out vec3 vCol; out float vAlpha; out float vU; out float vV; out float vRow; out float vBias; out float vGain;
-  out float vWpx; out float vCoc; out float vFloor; out float vSoft; out float vFar;
+  out float vWpx; out float vCoc; out float vFloor; out float vSoft; out float vFar; out vec2 vGrain; out float vTip; out float vGold;
 
   float eyeDist(vec3 p, vec4 e, float z) { return length((p - vec3(e.xy, z)) / vec3(e.z, e.w, e.z)); }
 
-  vec3 ramp(float v) {
-    vec3 ink = vec3(0.047, 0.040, 0.032), mid = vec3(0.40, 0.375, 0.335), bone = vec3(0.945, 0.915, 0.85);
-    return v < 0.5 ? mix(ink, mid, v / 0.5) : mix(mid, bone, (v - 0.5) / 0.5);
-  }
-
   void main() {
-    float u = aA.x, width = aA.y, side = aA.z, press = aA.w;
-    float tone = aB.x, gold = aB.y, shell = aB.z, row = aB.w;
+    float u = aA.x + uFlow, width = aA.y, s = aA.z, side = aT.w > 0.0 ? 1.0 : -1.0;
+    vec3 T0 = aT.xyz;
+    float tone = aB.x / 255.0, press = aB.y / 255.0, gold = aB.z / 255.0, row = aB.w;
+    float shell = aC.x, f = aC.y, delay = aC.z;
     float phase = row * 1.7 + tone * 31.0;
-    vec3 p0 = position;
-    // a slow drift along the strand, no jitter
-    p0 += aT * uDrift * sin(uTime * 0.31 + phase + dot(p0, vec3(2.1, 1.7, 2.6)));
-    vec3 nObj = normalize(p0 * vec3(0.92, 1.08, 0.92));
-    p0 += nObj * uDrift * 0.5 * sin(uTime * 0.23 + phase * 0.7 + dot(p0, vec3(1.3, 2.3, 1.1)));
 
-    // strands part around the eyes and sit darker against them
-    float dL = eyeDist(p0, uEyeL, uEyeZ.x), dR = eyeDist(p0, uEyeR, uEyeZ.y);
-    float dE = min(dL, dR);
-    float front = smoothstep(0.1, 0.45, p0.z);
-    float inEye = (1.0 - smoothstep(0.62, 0.9, dE)) * (1.0 - uBlink * 0.9);
-    p0 -= nObj * inEye * 0.09;
-    float contact = (1.0 - smoothstep(0.9, 1.75, dE)) * (1.0 - uBlink);
-    float face = (1.0 - smoothstep(0.1, 1.0, length((p0.xy - vec2(0.0, 0.5 * (uEyeL.y + uEyeR.y))) / vec2(0.85, 0.42)))) * front;
+    // the draw-on: a strand exists only between its tail and its head
+    float head = clamp((uDraw.x - delay) / max(1.0 - delay, 1e-3), -0.1, 1.1);
+    float tail = clamp((uDraw.y - delay) / max(1.0 - delay, 1e-3), -0.1, 1.1);
+    float len = f > 0.001 ? s / f : 0.2;
+    vTip = (head - f) * len;
+    float tailD = (f - tail) * len;
+    if (head <= 0.0 || f > head + 0.02 || f < tail - 0.02) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+
+    vec3 p0 = position;
+    if (uTaut > 0.001) {
+      // the lead pulled straight, from where it leaves the body to the hand holding it
+      float k = smoothstep(uLead0, uLead0 + 0.04, f) * uTaut;
+      float tl = clamp((f - uLead0) / (1.0 - uLead0), 0.0, 1.0);
+      vec3 straight = mix(uLeadA, uLeadB, tl);
+      straight.y -= uSag * 4.0 * tl * (1.0 - tl);
+      p0 = mix(p0, straight, k);
+    }
+    // a slow drift along the strand, no jitter
+    p0 += T0 * uDrift * sin(uTime * 0.31 + phase + dot(p0, vec3(2.1, 1.7, 2.6)));
+    vec3 nObj = normalize(p0 * vec3(0.95, 1.05, 0.95));
+    float contact = 0.0;
+    if (uBody > 0.5) {
+      p0 += nObj * uDrift * 0.5 * sin(uTime * 0.23 + phase * 0.7 + dot(p0, vec3(1.3, 2.3, 1.1)));
+      // strands part around the eyes and sit darker against them
+      float dE = min(eyeDist(p0, uEyeL, uEyeZ.x), eyeDist(p0, uEyeR, uEyeZ.y));
+      float inEye = (1.0 - smoothstep(0.7, 1.0, dE)) * (1.0 - uBlink * 0.92);
+      p0 -= nObj * inEye * 0.1;
+      contact = (1.0 - smoothstep(0.95, 1.5, dE)) * (1.0 - uBlink);
+    }
 
     vec3 p1 = breathe(p0);
-    vec3 p2 = breathe(p0 + aT * 0.012);
+    vec3 p2 = breathe(p0 + T0 * 0.012);
     vec4 mv = modelViewMatrix * vec4(p1, 1.0);
     vec3 P = mv.xyz;
     vec3 T = normalize((modelViewMatrix * vec4(p2, 1.0)).xyz - P);
@@ -90,22 +95,19 @@ const STRAND_VERT = /* glsl */`
     S = sl > 1e-4 ? S / sl : vec3(0.0, 1.0, 0.0);
 
     vec3 N = normalize(normalMatrix * nObj);
+    float ndv = dot(N, V);
     // the far side of the body is behind the core: skip it, which also halves the overdraw
-    if (dot(N, V) < -0.12 && shell < 1.06) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-    float ndl = dot(N, uKey);
-    float key = pow(clamp(ndl * 0.5 + 0.5, 0.0, 1.0), 1.5);
-    float ndv = max(dot(N, V), 0.0);
-    float rim = pow(1.0 - ndv, 3.2);
-    float depth = smoothstep(0.925, 1.0, shell);
+    if (uBody > 0.5 && ndv < -0.1) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+    float key = pow(clamp(dot(N, uKey) * 0.5 + 0.5, 0.0, 1.0), 1.4);
+    if (uBody < 0.5) key = 0.62;
 
-    // pencil shading: where the light falls the line is finer
     float z = max(-P.z, 1e-3);
     float px = projectionMatrix[1][1] * uViewport.y * 0.5 / z;
     float wpx = width * px;
     float lod0 = log2(max(uRowTex / max(wpx, 0.5), 1.0));
     float farness = smoothstep(1.0, 3.0, lod0);
-    float shadeW = mix(1.0, mix(1.22, 0.74, key), farness);
-    wpx *= shadeW;
+    // pencil shading: where the light falls the line is finer
+    wpx *= mix(1.0, mix(1.22, 0.76, key), farness * uBody);
 
     float coc = min(uAperture * abs(z - uFocus) / z * uViewport.y, uMaxCoc);
     float w2 = max(wpx, uMinPx);
@@ -114,76 +116,70 @@ const STRAND_VERT = /* glsl */`
     P += S * side * hw / px;
     gl_Position = projectionMatrix * vec4(P, 1.0);
 
-    float massK = smoothstep(0.99, 0.975, shell);
+    float massK = uBody * smoothstep(0.985, 0.97, shell);
     vU = u;
     vV = side * hw / w2;
     vRow = row;
     vWpx = w2;
     vCoc = coc;
-    vSoft = smoothstep(0.985, 0.94, shell) * 0.16 * w2;
+    vSoft = massK * 0.18 * w2;
     // wide strokes are the side of the pencil: grain, not a blurred edge
     vFar = max(farness, massK * smoothstep(0.0, 2.0, lod0));
     vBias = log2(1.0 + coc * 0.8);
     vGain = mix(1.0, uFarGain, smoothstep(1.0, 3.6, lod0));
     // far away the digits close up into a continuous line, broken only by the pressure of the numbers
-    vFloor = mix(smoothstep(3.4, 4.6, lod0) * 0.6, max(smoothstep(2.6, 3.6, lod0), uMassSolid) * mix(0.72, 0.84, uPaper), massK);
+    vFloor = mix(smoothstep(3.4, 4.6, lod0) * 0.62, max(smoothstep(2.6, 3.6, lod0), uMassSolid) * 0.82, massK);
+    // grain is anchored to the strand in world units, so it travels with the line when the camera moves
+    float gk = clamp(px * 0.62, 40.0, 320.0);
+    vGrain = vec2(s, side * width * hw / w2) * gk + vec2(phase * 13.0, phase * 7.0);
 
-    float a = mix(0.62, 1.0, press) * cover;
+    float a = mix(0.62, 1.0, press) * cover * uAlpha;
     // a strand pointing straight at the lens has no width to show: let it go rather than twist
     a *= smoothstep(0.06, 0.3, sl);
-    // lines pile up where the form turns away: thin them, or the edge reads as a nest
-    a *= mix(0.42, 1.0, smoothstep(0.02, 0.5, ndv));
-    // nothing on the far side of the body has to shade
-    vec3 col;
-    if (uPaper < 0.5) {
-      float shade = mix(0.06, 1.72, key * key * (3.0 - 2.0 * key)) * mix(0.92, 1.0, depth);
-      // on the dark ground the mass is what carries the light: chalk on a dark sheet, not wire on a ball
-      float massL = smoothstep(0.99, 0.975, shell);
-      // lit like the drawing it is: pale wide strokes, darker pencil over them, a few bone highlights
-      float lineTone = tone < 0.7 ? tone * 0.46 : tone * 0.9;
-      float tv = mix(lineTone, 0.5 + (tone - 0.33) * 0.26, massL);
-      float v = tv * shade + 0.015;
-      v += massL * face * uFaceLift * mix(0.5, 1.0, key);
-      v *= 1.0 - contact * 0.5;
-      col = ramp(clamp(v, 0.0, 1.0));
-      vec3 goldCol = vec3(0.80, 0.655, 0.39);
-      col = mix(col, goldCol * (0.3 + 0.9 * key), gold);
-      col += vec3(0.80, 0.56, 0.24) * pow(rim, 1.6) * (0.2 + 0.2 * smoothstep(0.3, 0.8, key)) * depth;
-      a *= mix(0.82, 1.0, depth);
-    } else {
-      // graphite on paper: dark value is the pencil, light strokes are a white pencil on top
-      float lit = smoothstep(0.42, 0.98, key);
-      float tn = tone;
-      vec3 graphite = mix(vec3(0.085, 0.078, 0.07), vec3(0.42, 0.395, 0.355), clamp(tn / 0.72, 0.0, 1.0));
-      col = graphite;
-      a *= mix(1.0, 0.46, lit * (0.4 + 0.6 * clamp(tn * 1.5, 0.0, 1.0)));
-      a *= mix(0.5, 1.0, depth);
+    // graphite on the sheet: dark value is the pencil, light strokes are a white pencil on top
+    float lit = smoothstep(0.34, 0.96, key);
+    float tn = tone;
+    vec3 col = mix(vec3(0.098, 0.09, 0.082), vec3(0.40, 0.378, 0.345), clamp(tn / 0.72, 0.0, 1.0));
+    if (uBody > 0.5) {
+      a *= mix(1.0, 0.3, lit * (0.45 + 0.55 * clamp(tn * 1.6, 0.0, 1.0)));
+      // lines pile up where the form turns away: thin them, so the edge is a turning, not an outline
+      a *= mix(0.14, 1.0, smoothstep(0.03, 0.56, ndv));
+      a *= mix(1.0, smoothstep(0.12, 0.62, ndv) * 0.55, massK);
+      a *= mix(0.5, 1.0, smoothstep(-0.8, -0.42, p0.y));
+      a = mix(a, min(1.0, a * 1.25), contact);
       if (tn > 0.72) {
         float wh = smoothstep(0.72, 0.8, tn);
-        col = mix(col, vec3(0.992, 0.975, 0.93), wh);
-        a = mix(a, press * cover * mix(0.35, 0.95, key), wh);
+        col = mix(col, vec3(0.992, 0.978, 0.94), wh);
+        a = mix(a, press * cover * mix(0.15, 0.85, key) * uAlpha, wh);
       }
-      col = mix(col, vec3(0.71, 0.5, 0.17), gold);
-      a = mix(a, press * cover * 0.95, gold);
-      col = mix(col, vec3(0.62, 0.44, 0.17), rim * 0.35 * smoothstep(0.25, 0.8, key));
-      a *= 1.0 - face * uFaceLift * 0.6;
-      a = mix(a, min(1.0, a * 1.2), contact);
+      // the macro camera clears the air around the lines it reads
+      if (uClear > 0.001 && shell < 1.05) {
+        float dc = length(p0 - uClearP);
+        a *= mix(1.0, mix(0.5, 0.3, 1.0 - massK), uClear * (1.0 - smoothstep(0.34, 0.62, dc)));
+      }
+      // the lines placed by hand are read, not shaded
+      if (shell >= 1.05) a = mix(a, press * cover * uAlpha, uClear);
     }
-    // what falls out of focus sinks into the warm of the room
-    float sink = smoothstep(2.0, 18.0, coc) * 0.42;
-    col = mix(col, uPaper < 0.5 ? vec3(0.62, 0.47, 0.25) * (0.3 + 0.7 * dot(col, vec3(0.33))) * 1.3 : vec3(0.47, 0.39, 0.27), sink);
+    // gold means the human's thread and nothing else
+    col = mix(col, vec3(0.70, 0.52, 0.2), gold);
+    if (gold > 0.5) a = press * cover * uAlpha * smoothstep(0.06, 0.3, sl);
+    // what falls out of focus sinks toward the paper
+    col = mix(col, vec3(0.5, 0.46, 0.39), smoothstep(2.0, 18.0, coc) * 0.34);
+    a *= smoothstep(0.0, 0.012, tailD);
+    a *= 1.0 - uFlicker * 0.55;
+    vGold = gold;
     vCol = col;
     vAlpha = a;
   }`;
 
 const STRAND_FRAG = /* glsl */`
   precision highp float;
-  uniform highp sampler2D tAtlas; uniform float uRows; uniform float uPaper;
+  uniform highp sampler2D tAtlas; uniform float uRows;
   ${NOISE_GLSL}
-  in float vFar;
-  in vec3 vCol; in float vAlpha; in float vU; in float vV; in float vRow; in float vBias; in float vGain; in float vWpx; in float vCoc; in float vFloor; in float vSoft;
+  in vec3 vCol; in float vAlpha; in float vU; in float vV; in float vRow; in float vBias; in float vGain; in float vWpx; in float vCoc; in float vFloor; in float vSoft; in float vFar; in vec2 vGrain; in float vTip; in float vGold;
   out vec4 fragColor;
   void main() {
+    if (vTip < 0.0) discard;
     float vv = clamp(vV, -0.5, 0.5);
     float atlasV = (vRow + 0.5 - vv) / uRows;
     float ink = texture(tAtlas, vec2(vU, atlasV), vBias).r;
@@ -192,12 +188,11 @@ const STRAND_FRAG = /* glsl */`
     float soft = max(max(0.7, vCoc), vSoft);
     float prof = 1.0 - smoothstep(halfW - soft, halfW + soft, d);
     float energy = vWpx / (vWpx + vCoc * 1.1);
-    float a = max(clamp(ink * vGain, 0.0, 1.0), vFloor) * prof * energy * vAlpha;
-    // the tooth of the sheet: far away the pencil catches on the high points and skips the low ones
+    float a = max(max(clamp(ink * vGain, 0.0, 1.0), vFloor), vGold * 0.82) * prof * energy * vAlpha;
+    // the tooth of the sheet: the pencil catches on the high points and skips the low ones
     if (vFar > 0.01) {
-      float tooth = vnoise(gl_FragCoord.xy * vec2(0.82)) * 0.65 + hash(gl_FragCoord.xy) * 0.35;
-      float amt = vFar * (uPaper > 0.5 ? 0.92 : 0.62);
-      a *= mix(1.0, smoothstep(0.08, 0.62, tooth + a * 0.34 - 0.12), amt);
+      float tooth = vnoise(vGrain) * 0.62 + vnoise(vGrain * 2.3 + 5.0) * 0.38;
+      a *= mix(1.0, smoothstep(0.1, 0.64, tooth + a * 0.34 - 0.14), vFar * 0.92);
     }
     if (a < 0.002) discard;
     fragColor = vec4(vCol * a, a);
@@ -206,168 +201,71 @@ const STRAND_FRAG = /* glsl */`
 const CORE_VERT = /* glsl */`
   precision highp float;
   in vec3 position;
-  uniform mat4 modelViewMatrix, projectionMatrix; uniform mat3 normalMatrix;
+  uniform mat4 modelViewMatrix, projectionMatrix;
   ${BREATHE_GLSL}
-  out vec3 vN; out vec3 vP; out vec3 vO;
-  void main() {
-    vec3 q = breathe(position);
-    vec4 mv = modelViewMatrix * vec4(q, 1.0);
-    vP = mv.xyz; vO = position;
-    vN = normalMatrix * normalize(position * vec3(0.92, 1.08, 0.92));
-    gl_Position = projectionMatrix * mv;
-  }`;
-
+  void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(breathe(position), 1.0); }`;
 const CORE_FRAG = /* glsl */`
   precision highp float;
-  uniform float uPaper, uCoreBlur, uBlink; uniform vec3 uKey; uniform vec3 uPaperCol; uniform vec4 uEyeL, uEyeR; uniform vec2 uEyeZ;
-  in vec3 vN; in vec3 vP; in vec3 vO;
   out vec4 fragColor;
-  float h(vec3 p){ p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3)); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
-  float n3(vec3 x){ vec3 i = floor(x), f = fract(x); f = f*f*(3.0-2.0*f);
-    return mix(mix(mix(h(i), h(i+vec3(1,0,0)), f.x), mix(h(i+vec3(0,1,0)), h(i+vec3(1,1,0)), f.x), f.y),
-               mix(mix(h(i+vec3(0,0,1)), h(i+vec3(1,0,1)), f.x), mix(h(i+vec3(0,1,1)), h(i+vec3(1,1,1)), f.x), f.y), f.z); }
-  // Irregular streaks in object space, like graphite rubbed along the form. Not stripes: stripes moire.
-  float streak(vec3 p, vec3 dir, vec3 perp, float seed) {
-    vec3 q = p + 0.22 * vec3(n3(p * 1.9 + seed), n3(p * 1.9 + seed + 7.0), n3(p * 1.9 + seed + 13.0));
-    float a = n3(vec3(dot(q, dir) * 52.0, dot(q, perp) * 3.2, seed));
-    float b = n3(vec3(dot(q, dir) * 19.0, dot(q, perp) * 1.6, seed + 3.0));
-    return mix(0.5, a * 0.6 + b * 0.4, 1.0 - uCoreBlur);
-  }
-  void main() {
-    vec3 N = normalize(vN), V = normalize(-vP);
-    float key = pow(clamp(dot(N, uKey) * 0.5 + 0.5, 0.0, 1.0), 1.5);
-    float ndv = max(dot(N, V), 0.0);
-    vec3 d1 = normalize(vec3(0.9, -0.62, 0.25)), p1 = normalize(cross(d1, vec3(0.1, 0.2, 1.0)));
-    vec3 d2 = normalize(vec3(0.5, 0.82, -0.2)), p2 = normalize(cross(d2, vec3(0.9, 0.1, 0.2)));
-    float st = max(streak(vO, d1, p1, 2.0), streak(vO, d2, p2, 6.0));
-    vec3 col; float a;
-    if (uPaper < 0.5) {
-      float t = clamp(key, 0.0, 1.0);
-      col = mix(vec3(0.022, 0.018, 0.015), vec3(0.052, 0.038, 0.022), uCoreBlur) + vec3(0.34, 0.315, 0.27) * smoothstep(0.34, 1.0, t) * (0.72 + 0.9 * (st - 0.5)) * (1.0 - uCoreBlur * 0.8);
-      a = 1.0;
-    } else {
-      float sh = clamp(1.0 - key, 0.0, 1.0);
-      float tone = smoothstep(0.2, 1.0, sh + (st - 0.5) * 0.5) * 0.3;
-      col = mix(uPaperCol * vec3(0.975, 0.962, 0.935), vec3(0.45, 0.415, 0.36), tone);
-      a = smoothstep(0.0, 0.3, ndv);
-    }
-    float dE = min(length((vO - vec3(uEyeL.xy, uEyeZ.x)) / uEyeL.zwz), length((vO - vec3(uEyeR.xy, uEyeZ.y)) / uEyeR.zwz));
-    col *= 1.0 - (1.0 - smoothstep(0.85, 1.2, dE)) * (uPaper > 0.5 ? 0.42 : 0.72) * (1.0 - uBlink);
-    fragColor = vec4(col * a, a);
-  }`;
+  void main() { fragColor = vec4(0.0); }`;
 
 const EYE_VERT = /* glsl */`
   precision highp float;
-  in vec3 position; in vec3 normal;
-  uniform mat4 modelViewMatrix, projectionMatrix; uniform mat3 normalMatrix;
-  out vec3 vN; out vec3 vP; out vec3 vL;
+  in vec3 position;
+  uniform mat4 modelViewMatrix, projectionMatrix;
+  out vec3 vL;
   void main() {
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    vP = mv.xyz; vL = position;
-    vN = normalMatrix * normal;
-    gl_Position = projectionMatrix * mv;
+    vL = position;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }`;
 
+// A drawn eye. Graphite pressed hard and matte, an outline the hand did not quite close evenly, and a
+// catchlight that is a small patch of sheet the pencil went around. Closed, it is one pencil stroke.
 const EYE_FRAG = /* glsl */`
   precision highp float;
-  uniform float uBlink, uLid, uRimPass, uPaper; uniform vec2 uLook;
-  in vec3 vN; in vec3 vP; in vec3 vL;
-  out vec4 fragColor;
+  uniform float uBlink; uniform vec2 uLook; uniform float uSeed;
   ${NOISE_GLSL}
+  in vec3 vL;
+  out vec4 fragColor;
   void main() {
     vec2 l = vL.xy;
-    // the edge is drawn, not cut: a small wobble so it belongs with the pencil around it
+    if (vL.z < 0.0) discard;
+    float r = length(l);
     float ang = atan(l.y, l.x);
-    float wob = vnoise(vec2(ang * 3.1 + 7.0, 1.3)) * 0.05 + vnoise(vec2(ang * 11.0, 4.2)) * 0.022;
-    float edgeAA = fwidth(length(l)) * 1.3;
-    float edge = 1.0 - smoothstep(0.955 - wob - edgeAA, 0.955 - wob + edgeAA, length(l));
-    if (edge < 0.01) discard;
-    // lids are not drawn: the eye is cut, and the body's own strands show where it closes
-    float blink = uBlink;
-    float rest = uLid;
-    float top = mix(1.2 - rest * 1.5 - rest * 1.15 * l.x * l.x, -0.42 + 0.42 * l.x * l.x, blink);
-    float bot = mix(-1.2, top - 0.13, blink * blink * blink);
-    float aa = fwidth(l.y) * 1.2;
-    float vis = (1.0 - smoothstep(top - aa, top + aa, l.y)) * smoothstep(bot - aa, bot + aa, l.y);
-    if (vis < 0.01) discard;
-    vec3 N = normalize(vN), V = normalize(-vP);
-    vec3 col;
-    if (uRimPass > 0.5) {
-      col = uPaper > 0.5 ? vec3(0.985, 0.965, 0.915) : vec3(0.84, 0.81, 0.75);
-      col *= 0.86 + 0.14 * smoothstep(-1.0, 0.6, l.y);
-    } else {
-      // a dark wet dome: faint warm bounce low down, one soft catchlight high on the side the light is
-      float sheen = smoothstep(-1.0, -0.2, -l.y);
-      col = vec3(0.026, 0.021, 0.017);
-      col += vec3(0.082, 0.062, 0.040) * smoothstep(0.35, 1.0, -l.y + 0.12 * l.x) * smoothstep(1.05, 0.55, length(l));
-      vec2 c1 = vec2(-0.3, 0.42 - rest * 0.62) + uLook * 0.1;
-      float d1 = length((l - c1) / vec2(0.3, 0.255));
-      col += vec3(0.98, 0.93, 0.83) * (1.0 - smoothstep(0.3, 1.0, d1)) * (uPaper > 0.5 ? 0.92 : 0.86);
-      col *= 1.0 - 0.0 * sheen;
-    }
-    if (uRimPass < 0.5) {
-      // pressed graphite, faintly uneven; the catchlight stays clean
-      float g = vnoise(vec2(l.x * 22.0 + l.y * 9.0, l.y * 34.0 - l.x * 6.0)) * 0.6 + vnoise(l * 60.0) * 0.4;
-      col += vec3(0.024, 0.021, 0.018) * g * (uPaper > 0.5 ? 1.5 : 0.6);
-    }
-    vis *= edge;
-    fragColor = vec4(col * vis, vis);
+    float wob = vnoise(vec2(ang * 1.9 + uSeed, 1.3)) * 0.075 + vnoise(vec2(ang * 7.0 + uSeed, 4.2)) * 0.03;
+    float grain = vnoise(l * 34.0 + uSeed) * 0.6 + vnoise(l * 79.0 + uSeed * 2.0) * 0.4;
+    float edge = 1.0 - smoothstep(0.8 - wob, 0.99 - wob, r + (grain - 0.5) * 0.17);
+
+    // the lid: closing is the top coming down onto a low arc
+    float b = uBlink;
+    float arc = -0.4 + 0.46 * l.x * l.x;
+    float top = mix(1.3, arc, b);
+    float thick = mix(2.6, 0.17 * (1.0 - 0.72 * l.x * l.x), b * b * b);
+    float bot = top - thick;
+    float aa = fwidth(l.y) * 1.4;
+    float lid = (1.0 - smoothstep(top - aa, top + aa, l.y + (grain - 0.5) * 0.05 * b)) * smoothstep(bot - aa, bot + aa, l.y + (grain - 0.5) * 0.05 * b);
+    float wide = mix(1.0, 1.0 - smoothstep(0.96, 1.04, abs(l.x)), b);
+    float shape = mix(edge, wide, smoothstep(0.75, 1.0, b)) * lid;
+    if (shape < 0.32) discard;
+
+    // pressed graphite: mostly solid, a few flecks where the sheet shows through at the edges
+    // visible strokes of the pencil, all one way, so it reads as filled in by hand and not as a bead
+    float st = vnoise(vec2((l.x * 0.82 + l.y * 0.57) * 15.0 + uSeed, (l.y * 0.82 - l.x * 0.57) * 2.4));
+    float st2 = vnoise(vec2((l.x * 0.82 + l.y * 0.57) * 38.0 + uSeed * 1.7, (l.y * 0.82 - l.x * 0.57) * 4.1));
+    float tone = 0.125 + (st * 0.6 + st2 * 0.4) * 0.085;
+    float fleck = smoothstep(0.62, 0.9, grain) * smoothstep(0.3, 0.85, r) * 0.7 + smoothstep(0.72, 0.92, st2) * smoothstep(0.76, 0.95, grain) * 0.42;
+    float a = shape * (1.0 - fleck) * mix(0.97, 0.9, b);
+    // the unmarked patch; it sits still when the eye closes because the lid has already passed it
+    vec2 c = vec2(-0.3, 0.36) + uLook * 0.06;
+    float dc = length((l - c) / vec2(1.0, 0.92));
+    float patchEdge = 0.135 + vnoise(vec2(atan(l.y - c.y, l.x - c.x) * 1.7 + uSeed, 2.0)) * 0.09;
+    float p = 1.0 - smoothstep(patchEdge - 0.035, patchEdge + 0.035, dc + (grain - 0.5) * 0.05);
+    a *= 1.0 - p;
+    vec3 col = vec3(tone, tone * 0.955, tone * 0.91);
+    fragColor = vec4(col * a, a);
   }`;
 
-const BACK_VERT = /* glsl */`
-  in vec3 position; out vec2 vUv;
-  void main() { vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 1.0, 1.0); }`;
-
-const BACK_FRAG = /* glsl */`
-  precision highp float;
-  uniform float uPaper, uHazeAmt, uShadow; uniform vec3 uBase, uHaze; uniform vec2 uCenter; uniform float uRadius, uAspect;
-  in vec2 vUv; out vec4 fragColor;
-  ${NOISE_GLSL}
-  void main() {
-    vec2 px = gl_FragCoord.xy;
-    vec2 q = (vUv - uCenter) * vec2(uAspect, 1.0);
-    vec3 col = uBase;
-    // a soft haze, centred a little up and to the left of the body, where the light comes from
-    float hd = length((q - vec2(-0.09, 0.08)) / vec2(1.25, 1.0)) / max(uRadius, 1e-3);
-    float haze = exp(-hd * hd * (uPaper > 0.5 ? 0.42 : 0.8));
-    float slow = fbm(q * 2.2 + 3.0);
-    col = mix(col, uHaze, haze * uHazeAmt * (0.84 + 0.32 * slow));
-    if (uPaper > 0.5) {
-      // sheet of paper: long soft fibres, a warm falloff toward the corners
-      float fibre = fbm(vec2(px.x * 0.012, px.y * 0.05)) - 0.5;
-      float tooth = vnoise(px * 0.62) - 0.5;
-      col *= 1.0 + fibre * 0.02 + tooth * 0.016;
-      col *= mix(1.0, 0.915, smoothstep(0.35, 1.05, length((vUv - 0.5) * vec2(1.25, 1.1))));
-    } else {
-      float tooth = vnoise(px * 0.7) - 0.5;
-      col *= 1.0 + tooth * 0.075;
-      col *= mix(1.0, 0.72, smoothstep(0.3, 1.0, length((vUv - 0.5) * vec2(1.2, 1.1))));
-    }
-    // the shadow it rests in
-    vec2 sq = (q - vec2(0.018, -0.86 * uRadius)) / (uRadius * vec2(0.96, 0.17));
-    float sh = exp(-dot(sq, sq) * 1.1);
-    vec3 shadowCol = uPaper > 0.5 ? vec3(0.40, 0.335, 0.235) : vec3(0.0);
-    // on paper the shadow is rubbed in by hand, along the ground
-    float rub = uPaper > 0.5 ? 0.84 + 0.32 * fbm(vec2(px.x * 0.05, px.y * 0.6)) : 1.0;
-    col = mix(col, shadowCol, clamp(sh * uShadow * (uPaper > 0.5 ? 0.58 : 0.72) * rub, 0.0, 1.0));
-    col += (hash(px + 7.1) - 0.5) / 255.0 * 2.0;
-    fragColor = vec4(col, 1.0);
-  }`;
-
-const GRAIN_FRAG = /* glsl */`
-  precision highp float;
-  uniform float uGrain, uPaper, uVignette;
-  in vec2 vUv; out vec4 fragColor;
-  ${NOISE_GLSL}
-  void main() {
-    vec2 px = gl_FragCoord.xy;
-    float n = hash(px) * 0.6 + hash(px * 0.5 + 3.1) * 0.4 - 0.5;
-    // multiply, so the grain is finest in the darks and never lifts them
-    float m = 1.0 + n * uGrain * 2.0;
-    fragColor = vec4(vec3(m * 0.5), 1.0);
-  }`;
-
-export async function buildAtlas(model, { size = ATLAS.size, rows = ATLAS.rows, weight = 500 } = {}) {
+export async function buildAtlas(model, { size = 4096, rows = 40, weight = 500 } = {}) {
   try { await document.fonts.load(`${weight} 72px "Martian Mono"`, '0123456789.−[]'); } catch (e) { /* the fallback mono still shows real numbers */ }
   const canvas = document.createElement('canvas');
   canvas.width = size; canvas.height = size;
@@ -402,168 +300,130 @@ export async function buildAtlas(model, { size = ATLAS.size, rows = ATLAS.rows, 
   tex.generateMipmaps = true;
   tex.anisotropy = 8;
   tex.needsUpdate = true;
-  return { texture: tex, canvas, lines, chars, rowH, font: ctx.font };
+  return { texture: tex, canvas, lines, chars, rowH, rows, font: ctx.font };
 }
 
-export class ScribbleBlob {
-  constructor({ model, atlas, eye = 'bean', bg = 'graphite', seed }) {
-    this.model = model;
-    this.atlas = atlas;
-    this.scene = new THREE.Scene();
+// Off the main thread when a worker is available, on it when not. Same seed, same strands either way.
+let worker = null, nextId = 1;
+const pending = new Map();
+export function packAsync(options, pack) {
+  try {
+    if (!worker) {
+      worker = new Worker(new URL('./blob-worker.js', import.meta.url), { type: 'module' });
+      worker.onmessage = (e) => { const r = pending.get(e.data.id); pending.delete(e.data.id); if (r) r(e.data); };
+    }
+    return new Promise((res) => { const id = nextId++; pending.set(id, res); worker.postMessage({ id, options, pack }); });
+  } catch (e) {
+    return Promise.reject(e);
+  }
+}
+
+// What every strand material shares, updated once per frame.
+export function makeShared(atlas) {
+  return {
+    tAtlas: { value: atlas.texture }, uRows: { value: atlas.rows }, uRowTex: { value: atlas.rowH },
+    uViewport: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 }, uFocus: { value: 6 }, uAperture: { value: 0 }, uMaxCoc: { value: 22 },
+    uMinPx: { value: 1.05 }, uFarGain: { value: 3.4 }, uMassSolid: { value: 1 },
+    uKey: { value: new THREE.Vector3(-0.48, 0.62, 0.62).normalize() },
+  };
+}
+
+export function strandMaterial(shared, { body = 0, breath = { value: 0 } } = {}) {
+  return new THREE.RawShaderMaterial({
+    glslVersion: THREE.GLSL3, vertexShader: STRAND_VERT, fragmentShader: STRAND_FRAG,
+    transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
+    blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
+    uniforms: {
+      ...shared,
+      uBreath: breath, uBody: { value: body }, uDrift: { value: body ? 0.005 : 0.002 }, uBlink: { value: 0 }, uFlow: { value: 0 }, uAlpha: { value: 1 },
+      uDraw: { value: new THREE.Vector2(1.2, -0.2) }, uTaut: { value: 0 }, uSag: { value: 0 }, uLead0: { value: 0.8 }, uLeadA: { value: new THREE.Vector3() }, uLeadB: { value: new THREE.Vector3() },
+      uClear: { value: 0 }, uClearP: { value: new THREE.Vector3() }, uFlicker: { value: 0 },
+      uEyeL: { value: new THREE.Vector4(9, 9, 1, 1) }, uEyeR: { value: new THREE.Vector4(9, 9, 1, 1) }, uEyeZ: { value: new THREE.Vector2() },
+    },
+  });
+}
+
+export function strandMesh(packed, shared, opts = {}) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(packed.position, 3));
+  geo.setAttribute('aT', new THREE.BufferAttribute(packed.tangent, 4, true));
+  geo.setAttribute('aA', new THREE.BufferAttribute(packed.a, 3));
+  geo.setAttribute('aB', new THREE.BufferAttribute(packed.b, 4, false));
+  geo.setAttribute('aC', new THREE.BufferAttribute(packed.c, 3));
+  geo.setIndex(new THREE.BufferAttribute(packed.index, 1));
+  const m = new THREE.Mesh(geo, strandMaterial(shared, opts));
+  m.frustumCulled = false;
+  m.renderOrder = opts.order ?? 5;
+  return m;
+}
+
+const SHARED_CORE = (() => {
+  let g = null;
+  return () => {
+    if (g) return g;
+    const c = coreMesh();
+    g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(c.position, 3));
+    g.setIndex(new THREE.BufferAttribute(c.index, 1));
+    return g;
+  };
+})();
+const DOME = new THREE.SphereGeometry(1, 30, 22);
+
+// A body: depth-only core, strands, two drawn eyes, its own breath and blink.
+export class Creature {
+  constructor(packed, shared, { order = 5, scale = 1, seed = 1, breathPhase = 0, eyeScale = 1 } = {}) {
+    this.eyeScale = eyeScale;
     this.root = new THREE.Group();
-    this.scene.add(this.root);
-    const t0 = performance.now();
-    this.blob = generateBlob(seed ? { seed } : {});
-    const packed = packStrands(this.blob, { atlasAspect: ATLAS.rows, rows: ATLAS.rows });
-    this.stats = { ...packed.stats, genMs: Math.round(performance.now() - t0) };
-    this._uShared = {
-      uBreath: { value: 0 }, uKey: { value: new THREE.Vector3(-0.48, 0.62, 0.62).normalize() }, uPaper: { value: 0 },
-    };
-    this._buildBackdrop();
-    this._buildCore();
-    this._buildStrands(packed);
-    this._buildEyes();
-    this._buildGrain();
-    this.time = 0;
-    this.breathPeriod = 11;
+    this.breath = { value: 0 };
+    this.breathPhase = breathPhase;
     this.look = new THREE.Vector2();
     this.lookTarget = new THREE.Vector2();
-    this.setBackground(bg);
-    this.setEyes(eye);
+    this.gazeTau = 0.9;
     this.blink = 0;
-    this.nextBlink = 3 + Math.random() * 3;
+    this.blinkHold = 0;
     this.blinkStart = -10;
-  }
-
-  _buildBackdrop() {
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
-    this._tri = geo;
-    this.backMat = new THREE.RawShaderMaterial({
-      glslVersion: THREE.GLSL3, vertexShader: BACK_VERT, fragmentShader: BACK_FRAG, depthTest: false, depthWrite: false,
-      uniforms: { uPaper: this._uShared.uPaper, uBase: { value: new THREE.Color() }, uHaze: { value: new THREE.Color() }, uHazeAmt: { value: 0.5 }, uCenter: { value: new THREE.Vector2(0.6, 0.5) }, uRadius: { value: 0.33 }, uAspect: { value: 1.6 }, uShadow: { value: 1 } },
-    });
-    const m = new THREE.Mesh(geo, this.backMat);
-    m.frustumCulled = false; m.renderOrder = -10;
-    this.scene.add(m);
-  }
-
-  _buildCore() {
-    const c = coreMesh(0.915);
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(c.position, 3));
-    geo.setIndex(new THREE.BufferAttribute(c.index, 1));
+    this.autoBlink = true;
+    this.time = 0;
+    this.nextBlink = 3 + ((seed * 7.3) % 4);
+    this.period = 11;
+    this.lean = 0;       // straining forward
+    this.scale = scale;
+    this.seed = seed;
     this.coreMat = new THREE.RawShaderMaterial({
-      glslVersion: THREE.GLSL3, vertexShader: CORE_VERT, fragmentShader: CORE_FRAG,
-      blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, transparent: false,
-      uniforms: { uBreath: this._uShared.uBreath, uKey: this._uShared.uKey, uPaper: this._uShared.uPaper, uPaperCol: { value: new THREE.Color() }, uCoreBlur: { value: 0 } },
+      glslVersion: THREE.GLSL3, vertexShader: CORE_VERT, fragmentShader: CORE_FRAG, colorWrite: false,
+      uniforms: { uBreath: this.breath },
     });
-    const m = new THREE.Mesh(geo, this.coreMat);
-    m.renderOrder = 0; m.frustumCulled = false;
-    this.root.add(m);
-    this.core = m;
-    this.stats.coreTriangles = c.index.length / 3;
-  }
-
-  _buildStrands(p) {
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(p.position, 3));
-    geo.setAttribute('aT', new THREE.BufferAttribute(p.tangent, 3));
-    geo.setAttribute('aA', new THREE.BufferAttribute(p.a, 4));
-    geo.setAttribute('aB', new THREE.BufferAttribute(p.b, 4));
-    geo.setIndex(new THREE.BufferAttribute(p.index, 1));
-    this.strandMat = new THREE.RawShaderMaterial({
-      glslVersion: THREE.GLSL3, vertexShader: STRAND_VERT, fragmentShader: STRAND_FRAG,
-      transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
-      blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
-      uniforms: {
-        tAtlas: { value: this.atlas.texture }, uRows: { value: ATLAS.rows }, uRowTex: { value: this.atlas.rowH },
-        uViewport: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 }, uFocus: { value: 6 }, uAperture: { value: 0 }, uMaxCoc: { value: 26 },
-        uMassSolid: { value: 1 }, uMinPx: { value: 1.3 }, uFarGain: { value: 3.6 }, uDrift: { value: 0.0055 }, uFaceLift: { value: 0.1 },
-        uEyeL: { value: new THREE.Vector4() }, uEyeR: { value: new THREE.Vector4() }, uEyeZ: { value: new THREE.Vector2() }, uBlink: { value: 0 },
-        uBreath: this._uShared.uBreath, uKey: this._uShared.uKey, uPaper: this._uShared.uPaper,
-      },
-    });
-    this.coreMat.uniforms.uEyeL = this.strandMat.uniforms.uEyeL;
-    this.coreMat.uniforms.uEyeR = this.strandMat.uniforms.uEyeR;
-    this.coreMat.uniforms.uEyeZ = this.strandMat.uniforms.uEyeZ;
-    this.coreMat.uniforms.uBlink = this.strandMat.uniforms.uBlink;
-    const m = new THREE.Mesh(geo, this.strandMat);
-    m.renderOrder = 5; m.frustumCulled = false;
-    this.root.add(m);
-    this.strands = m;
-  }
-
-  _buildEyes() {
-    const dome = new THREE.SphereGeometry(1, 36, 28);
-    const mat = (rimPass) => new THREE.RawShaderMaterial({
-      glslVersion: THREE.GLSL3, vertexShader: EYE_VERT, fragmentShader: EYE_FRAG,
-      blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, transparent: false,
-      uniforms: { uBlink: { value: 0 }, uLid: { value: 0 }, uRimPass: { value: rimPass }, uPaper: this._uShared.uPaper, uLook: { value: new THREE.Vector2() } },
-    });
-    this.eyeMat = mat(0);
-    this.rimMat = mat(1);
-    const make = () => {
-      const g = new THREE.Group();
-      const rim = new THREE.Mesh(dome, this.rimMat);
-      const pupil = new THREE.Mesh(dome, this.eyeMat);
-      rim.renderOrder = 2; pupil.renderOrder = 3;
-      rim.frustumCulled = pupil.frustumCulled = false;
-      g.add(rim); g.add(pupil);
-      g.userData = { rim, pupil };
-      this.root.add(g);
-      return g;
+    this.core = new THREE.Mesh(SHARED_CORE(), this.coreMat);
+    this.core.frustumCulled = false; this.core.renderOrder = order - 2;
+    this.root.add(this.core);
+    this.strands = strandMesh(packed, shared, { body: 1, breath: this.breath, order });
+    this.root.add(this.strands);
+    this.eyeMats = [];
+    const makeEye = (i) => {
+      const mat = new THREE.RawShaderMaterial({
+        glslVersion: THREE.GLSL3, vertexShader: EYE_VERT, fragmentShader: EYE_FRAG,
+        blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, transparent: false,
+        uniforms: { uBlink: { value: 0 }, uLook: { value: new THREE.Vector2() }, uSeed: { value: seed * 3.1 + i * 11.7 } },
+      });
+      this.eyeMats.push(mat);
+      const m = new THREE.Mesh(DOME, mat);
+      m.frustumCulled = false; m.renderOrder = order - 1;
+      this.root.add(m);
+      return m;
     };
-    this.eyeL = make();
-    this.eyeR = make();
+    this.eyeL = makeEye(0);
+    this.eyeR = makeEye(1);
+    this.placeEyes(0);
   }
 
-  _buildGrain() {
-    this.grainMat = new THREE.RawShaderMaterial({
-      glslVersion: THREE.GLSL3, vertexShader: BACK_VERT, fragmentShader: GRAIN_FRAG, depthTest: false, depthWrite: false, transparent: true,
-      blending: THREE.CustomBlending, blendSrc: THREE.DstColorFactor, blendDst: THREE.SrcColorFactor,
-      uniforms: { uGrain: { value: 0.05 }, uPaper: this._uShared.uPaper, uVignette: { value: 0 } },
-    });
-    const m = new THREE.Mesh(this._tri, this.grainMat);
-    m.frustumCulled = false; m.renderOrder = 100;
-    this.scene.add(m);
-  }
-
-  setBackground(name) {
-    const b = BACKGROUNDS[name] || BACKGROUNDS.graphite;
-    this.bgName = name;
-    this._uShared.uPaper.value = b.paper;
-    // colours are authored in display space and written straight out
-    const c = (hex, v) => v.setStyle(hex, THREE.LinearSRGBColorSpace);
-    c(b.base, this.backMat.uniforms.uBase.value);
-    c(b.haze, this.backMat.uniforms.uHaze.value);
-    c(b.base, this.coreMat.uniforms.uPaperCol.value);
-    this.backMat.uniforms.uHazeAmt.value = b.hazeAmt;
-    this.grainMat.uniforms.uGrain.value = b.grain;
-    this.strandMat.uniforms.uFaceLift.value = b.paper ? 0.28 : 0.16;
-  }
-
-  setEyes(name) {
-    const e = EYES[name] || EYES.bean;
-    this.eyeName = name;
-    this.eyeCfg = e;
-    this.eyeMat.uniforms.uLid.value = e.lid;
-    this.rimMat.uniforms.uLid.value = e.lid;
-    for (const [g, sign] of [[this.eyeL, -1], [this.eyeR, 1]]) {
-      g.userData.rim.visible = e.rim > 0;
-      g.userData.sign = sign;
-    }
-    this._placeEyes(0);
-  }
-
-  _placeEyes(breath) {
-    const e = this.eyeCfg;
+  placeEyes(breath) {
+    const e = EYE, u = this.strands.material.uniforms;
     const shift = this.look;
-    for (const [g, sign, uni] of [[this.eyeL, -1, this.strandMat.uniforms.uEyeL], [this.eyeR, 1, this.strandMat.uniforms.uEyeR]]) {
-      const x = sign * e.x + shift.x * 0.035, y = e.y + shift.y * 0.022;
-      const dir = [x, y, Math.sqrt(Math.max(0.02, 1 - x * x - y * y))];
-      // solve for the surface point whose xy matches the eye's placement, a few steps is plenty
-      let d = dir.slice();
+    for (const [g, sign, uni] of [[this.eyeL, -1, u.uEyeL], [this.eyeR, 1, u.uEyeR]]) {
+      const x = sign * e.x + shift.x * 0.04, y = e.y + shift.y * 0.026;
+      let d = [x, y, Math.sqrt(Math.max(0.02, 1 - x * x - y * y))];
       let p = surfacePoint(d);
       for (let i = 0; i < 5; i++) {
         d = [d[0] + (x - p[0]) * 0.8, d[1] + (y - p[1]) * 0.8, d[2]];
@@ -571,33 +431,18 @@ export class ScribbleBlob {
       }
       const n = surfaceNormal(d);
       const b = breatheJS(p, breath);
-      const inset = Math.min(e.rx, e.ry) * 0.12;
-      g.position.set(b[0] - n[0] * inset, b[1] - n[1] * inset, b[2] - n[2] * inset);
-      // face halfway between the surface normal and straight ahead, so the two eyes look together
-      const f = new THREE.Vector3(n[0] * 0.62, n[1] * 0.62, n[2] * 0.62 + 0.38).normalize();
-      const up = new THREE.Vector3(sign * e.tilt, 1, 0);
-      const m = new THREE.Matrix4().lookAt(f, new THREE.Vector3(), up);
-      g.quaternion.setFromRotationMatrix(m);
-      const depth = Math.min(e.rx, e.ry) * 0.3;
-      const { rim, pupil } = g.userData;
-      if (e.rim > 0) {
-        // the pupil fills most of the eye and slides inside the rim as it looks
-        const fill = 1 - e.rim;
-        rim.scale.set(e.rx, e.ry, depth * 0.92);
-        pupil.scale.set(e.rx * fill, e.ry * fill, depth);
-        pupil.position.set(shift.x * e.rx * e.rim * 0.9, shift.y * e.ry * e.rim * 0.9 - e.ry * e.rim * 0.2, depth * 0.08);
-      } else {
-        pupil.scale.set(e.rx, e.ry, depth);
-        pupil.position.set(0, 0, 0);
-      }
-      uni.value.set(p[0], p[1], e.rx, e.ry);
-      if (sign < 0) this.strandMat.uniforms.uEyeZ.value.x = p[2]; else this.strandMat.uniforms.uEyeZ.value.y = p[2];
+      g.position.set(b[0], b[1], b[2]);
+      const f = new THREE.Vector3(n[0] * 0.7, n[1] * 0.7, n[2] * 0.7 + 0.3).normalize();
+      g.quaternion.setFromRotationMatrix(new THREE.Matrix4().lookAt(f, new THREE.Vector3(), new THREE.Vector3(0, 1, 0)));
+      g.scale.set(e.rx * this.eyeScale, e.ry * this.eyeScale, Math.min(e.rx, e.ry) * 0.16);
+      uni.value.set(p[0], p[1], e.rx * this.eyeScale, e.ry * this.eyeScale);
+      if (sign < 0) u.uEyeZ.value.x = p[2]; else u.uEyeZ.value.y = p[2];
     }
   }
 
   // waveform: slow sine with a touch of hold at the top and bottom, as a resting breath has
   breathAt(t) {
-    const s = Math.sin((t / this.breathPeriod) * Math.PI * 2);
+    const s = Math.sin(((t + this.breathPhase) / this.period) * Math.PI * 2);
     return Math.sign(s) * Math.pow(Math.abs(s), 0.85);
   }
 
@@ -605,55 +450,54 @@ export class ScribbleBlob {
     if (!frozen) this.time += dt;
     const t = this.time;
     const b = this.breathAt(t);
-    this._uShared.uBreath.value = b;
-    this.strandMat.uniforms.uTime.value = t;
-    // lazy gaze: nearly a second to catch up, never a snap
-    const k = 1 - Math.exp(-dt / 0.9);
-    this.look.lerp(this.lookTarget, frozen ? 1 : k);
-    this.root.rotation.y = this.look.x * 0.075 + Math.sin(t * 0.17) * 0.012;
-    this.root.rotation.x = -this.look.y * 0.04;
-    this.root.rotation.z = Math.sin(t * 0.13 + 1.0) * 0.008;
-    this.eyeMat.uniforms.uLook.value.copy(this.look);
-    this.rimMat.uniforms.uLook.value.copy(this.look);
-    // slow blinks
-    if (!frozen) {
-      if (t > this.nextBlink) { this.blinkStart = t; this.nextBlink = t + 6 + Math.random() * 6; }
+    this.breath.value = b;
+    const k = frozen ? 1 : 1 - Math.exp(-dt / this.gazeTau);
+    this.look.lerp(this.lookTarget, k);
+    const yaw = this.look.x * 0.075 + Math.sin(t * 0.17 + this.seed) * 0.012;
+    const pitch = -this.look.y * 0.04;
+    this.root.rotation.set(pitch + this.lean * 0.2, yaw, Math.sin(t * 0.13 + 1.0 + this.seed) * 0.008);
+    this.eyeMats.forEach((m) => m.uniforms.uLook.value.copy(this.look));
+    if (!frozen && this.autoBlink) {
+      if (t > this.nextBlink && this.blinkHold <= 0) { this.blinkStart = t; this.nextBlink = t + 6 + ((t * 13.7 + this.seed) % 6); }
       const e = t - this.blinkStart;
-      const close = 0.34, hold = 0.09, open = 0.62;
+      const close = 0.38, hold = 0.09, open = 0.66;
       let v = 0;
       if (e < close) { const u = e / close; v = u * u * (3 - 2 * u); }
       else if (e < close + hold) v = 1;
       else if (e < close + hold + open) { const u = (e - close - hold) / open; v = 1 - u * u * (3 - 2 * u); }
-      this.blink = v;
+      this.blinkTarget = v;
     }
-    this.eyeMat.uniforms.uBlink.value = this.blink;
-    this.rimMat.uniforms.uBlink.value = this.blink;
-    this.strandMat.uniforms.uBlink.value = this.blink;
-    this._placeEyes(b);
-  }
-
-  setCameraUniforms(camera, renderer, { aperture = 0, focus = null } = {}) {
-    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-    const u = this.strandMat.uniforms;
-    u.uViewport.value.copy(size);
-    u.uAperture.value = aperture;
-    u.uFocus.value = focus ?? camera.position.distanceTo(this.root.position);
-    u.uMinPx.value = 1.05 * renderer.getPixelRatio();
-    u.uKey.value.set(-0.48, 0.62, 0.62).normalize().transformDirection(camera.matrixWorldInverse);
-    // project the body to the screen for the haze and shadow behind it
-    const c = new THREE.Vector3(0, 0, 0).project(camera);
-    const top = new THREE.Vector3(0, 1, 0).project(camera);
-    const bu = this.backMat.uniforms;
-    bu.uCenter.value.set(c.x * 0.5 + 0.5, c.y * 0.5 + 0.5);
-    const rad = Math.abs(top.y - c.y) * 0.5;
-    bu.uRadius.value = rad;
-    bu.uAspect.value = size.x / size.y;
-    bu.uShadow.value = THREE.MathUtils.smoothstep(camera.position.length(), 1.6, 3.2);
-    // up close the core is behind the focal plane: its hatching melts into plain tone
-    const dist = camera.position.length();
-    this.coreMat.uniforms.uCoreBlur.value = 1 - THREE.MathUtils.smoothstep(dist, 1.8, 2.8);
-    u.uMassSolid.value = THREE.MathUtils.smoothstep(dist, 1.8, 3.2);
+    let target = this.blinkTarget ?? 0;
+    if (this.blinkHold > 0) { this.blinkHold -= dt; target = 1; }
+    if (!frozen) this.blink += (target - this.blink) * (1 - Math.exp(-dt / 0.05));
+    this.eyeMats.forEach((m) => { m.uniforms.uBlink.value = this.blink; });
+    this.strands.material.uniforms.uBlink.value = this.blink;
+    this.placeEyes(b);
   }
 }
 
-export { surfacePoint, surfaceNormal, shellRadius };
+export function applyPose(camera, pose, w, h) {
+  const dir = new THREE.Vector3(pose.dir[0], pose.dir[1], pose.dir[2]).normalize();
+  const t = new THREE.Vector3(pose.target[0], pose.target[1], pose.target[2]);
+  camera.position.copy(t).addScaledVector(dir, pose.dist);
+  camera.up.set(pose.up[0], pose.up[1], pose.up[2]);
+  camera.lookAt(t);
+  camera.aspect = w / h;
+  camera.fov = FOV;
+  camera.setViewOffset(w, h, -(pose.sx || 0) * w, -(pose.sy || 0) * h, w, h);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+}
+
+export function frameShared(shared, camera, renderer, dpr, t, pose) {
+  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+  shared.uViewport.value.copy(size);
+  shared.uAperture.value = pose.aperture ?? 0.0005;
+  shared.uFocus.value = pose.focus ?? pose.dist;
+  shared.uMinPx.value = 1.0 * dpr;
+  shared.uTime.value = t;
+  shared.uKey.value.set(-0.48, 0.62, 0.62).normalize().transformDirection(camera.matrixWorldInverse);
+  shared.uMassSolid.value = THREE.MathUtils.smoothstep(camera.position.length(), 1.9, 3.2);
+}
+
+export { surfacePoint, surfaceNormal };

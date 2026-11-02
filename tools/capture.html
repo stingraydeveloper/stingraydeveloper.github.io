@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>Scene capture</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Martian+Mono:wdth,wght@75..112.5,300..600&display=swap">
+<style>html,body{margin:0;background:#ece5d4}canvas{display:block;max-width:100vw;height:auto}</style>
+<script type="importmap">{"imports":{"three":"../vendor/three.module.min.js","three/addons/":"../vendor/jsm/"}}</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+// Renders the work scenes with the live engine. POSTs transparent WebP for the page, flat PNG for press.
+import * as THREE from 'three';
+import { Creature, buildAtlas, packAsync, makeShared, applyPose, frameShared, strandMesh } from '../blob-render.js';
+import { packStrands } from '../blob-geometry.js';
+import { groundShadow } from '../blob-props.js';
+import { SCENES } from '../work-scenes.js';
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, premultipliedAlpha: true, preserveDrawingBuffer: true, stencil: false, powerPreference: 'high-performance' });
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+renderer.toneMapping = THREE.NoToneMapping;
+renderer.setClearColor(0x000000, 0);
+const W = 2400, H = 1800;
+renderer.setPixelRatio(1);
+renderer.setSize(W, H, false);
+const camera = new THREE.PerspectiveCamera(22, W / H, 0.02, 60);
+const model = await fetch('../model.json').then((r) => r.json());
+const atlas = await buildAtlas(model);
+const shared = makeShared(atlas);
+const packOpts = { atlasAspect: atlas.rows, rows: atlas.rows };
+const bodyP = await packAsync({ readers: false }, packOpts);
+
+function renderScene(name) {
+  const def = SCENES[name]();
+  const scene = new THREE.Scene();
+  const blob = new Creature(bodyP, shared, { seed: 1, order: 10 });
+  blob.root.position.fromArray(def.blob.c);
+  blob.root.scale.setScalar(def.blob.s);
+  blob.autoBlink = false;
+  blob.time = 2.2;
+  blob.blink = def.blob.blink ?? 0;
+  blob.update(0, { frozen: true });
+  blob.root.position.fromArray(def.blob.c);
+  scene.add(blob.root);
+  const sh = strandMesh(packStrands(groundShadow(), packOpts), shared, { order: 2 });
+  blob.root.add(sh);
+  if (def.back.length) scene.add(strandMesh(packStrands({ strands: def.back }, packOpts), shared, { order: 4 }));
+  if (def.front.length) scene.add(strandMesh(packStrands({ strands: def.front }, packOpts), shared, { order: 30 }));
+  // patches that write depth and no colour, so what is behind a prop is hidden and the sheet shows
+  const plain = new THREE.MeshBasicMaterial({ colorWrite: false });
+  for (const f of def.fills || []) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(f.w, f.h), plain);
+    m.position.fromArray(f.c);
+    m.rotation.z = f.a || 0;
+    m.renderOrder = 1;
+    scene.add(m);
+  }
+  const pose = { target: def.pose.target, dir: [0, 0.02, 1], up: [0, 1, 0], dist: def.pose.dist, sx: 0, sy: 0, aperture: 0 };
+  applyPose(camera, pose, W, H);
+  frameShared(shared, camera, renderer, 1.7, 2.2, pose);
+  renderer.render(scene, camera);
+  return canvas;
+}
+const toBlob = (c, type, q) => new Promise((res) => c.toBlob(res, type, q));
+const post = (name, dir, blob) => fetch(`/__shot?name=${encodeURIComponent(name)}&dir=${dir}`, { method: 'POST', body: blob }).then((r) => r.json());
+const copy = (w, h, flat) => { const o = document.createElement('canvas'); o.width = w; o.height = h; const x = o.getContext('2d'); x.imageSmoothingQuality = 'high'; if (flat) { x.fillStyle = '#ece5d4'; x.fillRect(0, 0, w, h); } x.drawImage(canvas, 0, 0, w, h); return o; };
+
+window.__capture = async (name, { preview = false } = {}) => {
+  renderScene(name);
+  if (preview) { await post(`${name}.png`, 'review-shots-final-blob/wip', await toBlob(copy(1200, 900, true), 'image/png')); return name; }
+  const assetDir = 'site/assets/work';
+  if (name === 'blob-poster') {
+    await post('blob-poster-1200.webp', 'site/assets', await toBlob(copy(1200, 900), 'image/webp', 0.78));
+  } else {
+    await post(`${name}-2400.webp`, assetDir, await toBlob(copy(2400, 1800), 'image/webp', 0.72));
+    await post(`${name}-1200.webp`, assetDir, await toBlob(copy(1200, 900), 'image/webp', 0.76));
+    await post(`${name}.png`, 'press', await toBlob(copy(2400, 1800, true), 'image/png'));
+    await post(`${name}-1200.png`, 'press', await toBlob(copy(1200, 900, true), 'image/png'));
+    await post(`${name}.png`, 'review-shots-final-blob/work', await toBlob(copy(1200, 900, true), 'image/png'));
+  }
+  return name;
+};
+window.__names = Object.keys(SCENES);
+window.__labReady = true;
+</script>
+</body>
+</html>

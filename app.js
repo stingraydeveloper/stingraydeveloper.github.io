@@ -1,6 +1,6 @@
-// Ray K. · the harness. Demos, motion and the register. router.js and model.json are untouched.
+// Ray K. · the blob. Demos, motion and the register. router.js and model.json are untouched.
 import { classify } from './router.js';
-import { createStage } from './scene.js';
+import { createStage } from './stage.js';
 
 // The one place the profile link lives. Swap it here.
 const PROFILE_URL = 'https://www.upwork.com/freelancers/~01b7901955d36b88ee';
@@ -9,40 +9,30 @@ const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const G = window.gsap || null;
 const ST = window.ScrollTrigger || null;
 if (G && ST) G.registerPlugin(ST);
-if (G && window.SplitText) G.registerPlugin(window.SplitText);
 const motion = !!(G && ST) && !reduced;
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
-const film = new URLSearchParams(location.search).has('film'); // recording mode: no grain at all
-if (film) document.documentElement.classList.add('film');
 
 $$('a[data-profile]').forEach((a) => { a.href = PROFILE_URL; a.rel = 'noopener'; });
 
-// ---------- the stage ----------
+// ---------- the stage: created once the model is here, because its strands are the model's numbers ----------
 const stageWrap = $('#stage-wrap');
 let stage = null;
-try {
-  stage = createStage($('#stage'), { reduced, grain: film ? 0 : 0.012 });
-} catch (e) {
-  stage = null;
-}
-if (stage) {
-  stage.setAnchors($('#hero'), $('#anchor-gate'), $('.hero-copy'));
-  requestAnimationFrame(() => requestAnimationFrame(() => stageWrap.classList.add('live')));
-} else {
-  stageWrap.classList.add('nogl');
-}
+const params = new URLSearchParams(location.search);
+const hasGL = (() => { try { const c = document.createElement('canvas'); return !!c.getContext('webgl2'); } catch (e) { return false; } })();
+if (!hasGL || params.has('nogl')) stageWrap.classList.add('nogl');
+if (params.get('face')) document.documentElement.dataset.face = params.get('face');
 
 // ---------- smooth scroll ----------
 let lenis = null;
 if (motion && window.Lenis) {
-  lenis = new window.Lenis({ lerp: 0.11, smoothWheel: true });
+  lenis = new window.Lenis({ lerp: 0.085, smoothWheel: true });
   lenis.on('scroll', ST.update);
   G.ticker.add((t) => lenis.raf(t * 1000));
   G.ticker.lagSmoothing(0);
 }
 const scrollTo = (target) => {
-  if (lenis) lenis.scrollTo(target, { offset: -24, duration: 1.4 });
+  if (lenis) lenis.scrollTo(target, { offset: -24, duration: 1.8 });
   else target.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth' });
 };
 $$('a[href^="#"]').forEach((a) => a.addEventListener('click', (e) => {
@@ -54,106 +44,152 @@ $$('a[href^="#"]').forEach((a) => a.addEventListener('click', (e) => {
   scrollTo(el);
 }));
 
-// ---------- the harness sequence ----------
-const labelsUl = $('#labels');
-const labels = $$('#labels li');
+// ---------- the acts ----------
+const LINES = ['read the whole thread.', 'pick up new skills.', 'run a small crew.', 'work in a harness.', 'just work.'];
+const lineEls = [$('#line-a'), $('#line-b')];
+const heroCopy = $('.hero-copy');
 const heroClose = $('#hero-close');
-let seqProgress = 0;
-const labelState = new Map();
-function showLabel(li, on) {
-  if (labelState.get(li) === on) return;
-  labelState.set(li, on);
-  if (!G || reduced) { li.classList.toggle('is-on', on); return; }
-  if (on) {
-    li.classList.add('is-on');
-    G.fromTo(li, { opacity: 0, y: -14 }, { opacity: 1, y: 0, duration: 0.55, ease: 'back.out(2.2)', overwrite: true });
-  } else {
-    G.to(li, { opacity: 0, y: -8, duration: 0.25, ease: 'power2.in', overwrite: true, onComplete: () => li.classList.remove('is-on') });
+const heroNote = $('#hero-note');
+const N_ACTS = 6;                  // five acts, then the close on its own beat
+const TOUR_SECONDS = 8.5;          // a visitor who sits still gets one act every this many seconds
+let shownLine = -1, front = 0, lineTween = null;
+
+function setLine(i, instant = false) {
+  if (i === shownLine) return;
+  shownLine = i;
+  const incoming = lineEls[1 - front], outgoing = lineEls[front];
+  front = 1 - front;
+  incoming.textContent = LINES[i];
+  if (instant || !G || reduced) {
+    outgoing.style.cssText = 'opacity:0'; incoming.style.cssText = 'opacity:1;--m:1';
+    return;
   }
+  G.killTweensOf(lineEls);
+  // out in 0.8 s; in over 1.3 s, a soft mask running down the line; no bounce
+  G.fromTo(outgoing, { opacity: 1, y: 0 }, { opacity: 0, y: '-0.1em', duration: 0.8, ease: 'sine.inOut' });
+  G.fromTo(incoming, { opacity: 1, y: '0.1em', '--m': 0 }, { opacity: 1, y: 0, '--m': 1, duration: 1.3, delay: 0.1, ease: 'sine.inOut' });
 }
-let closeShown = null;
-function showClose(on) {
+let closeShown = false;
+function setClose(on, instant = false) {
   if (closeShown === on) return;
   closeShown = on;
-  if (!G || reduced) { heroClose.classList.toggle('is-on', on); return; }
-  if (on) {
-    heroClose.classList.add('is-on');
-    G.fromTo(heroClose.children, { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.9, ease: 'power3.out', stagger: 0.1, overwrite: true });
+  heroCopy.classList.toggle('is-close', on);
+  if (!G || reduced || instant) { heroClose.style.opacity = on ? 1 : 0; return; }
+  G.to(heroClose, { opacity: on ? 1 : 0, y: on ? 0 : 10, duration: 1.2, ease: 'sine.inOut', overwrite: true });
+  G.to(['.stem', '#line'], { opacity: on ? 0 : 1, duration: 1.0, ease: 'sine.inOut', overwrite: true });
+}
+let noteShown = false;
+function setNote(on) {
+  if (noteShown === on) return;
+  noteShown = on;
+  heroCopy.classList.toggle('is-macro', on);
+  if (!G || reduced) { heroNote.style.opacity = on ? 1 : 0; return; }
+  G.to($('#stage'), { '--fade': on ? 0 : 1, duration: on ? 1.2 : 1.6, ease: 'sine.inOut', overwrite: 'auto' });
+  G.to(heroNote, { opacity: on ? 1 : 0, y: on ? 0 : 6, duration: 1.1, ease: 'sine.inOut', overwrite: true });
+}
+function presentAct(k) {
+  setLine(Math.min(4, Math.max(0, Math.floor(k + 0.02))));
+  setNote(k > 1.22 && k < 2.1);
+  setClose(k >= 5.2);
+}
+
+// tour: acts advance on their own at the top; once the visitor scrolls, acts never jump backward:
+// act = max(tour, scroll) until the scroll catches up, then the scroll alone
+const driver = { tour: 0, touring: !reduced, scroll: 0, floor: 0, idle: 0 };
+function driveActs(dt) {
+  if (driver.touring) {
+    driver.tour += dt / TOUR_SECONDS;
+    if (driver.tour >= 5) { driver.tour -= 5; if (stage) stage.wrapTour(5); }
+  } else if (driver.scroll <= 0.0005) {
+    // back at the very top and left alone: the tour picks up from where things stand
+    driver.idle += dt;
+    if (driver.idle > 7) { driver.touring = true; driver.tour = Math.min(4.99, driver.floor); driver.floor = 0; }
   } else {
-    G.to(heroClose.children, { opacity: 0, y: 10, duration: 0.3, overwrite: true, onComplete: () => heroClose.classList.remove('is-on') });
+    driver.idle = 0;
   }
+  if (driver.floor && driver.scroll >= driver.floor) driver.floor = 0;
+  const k = driver.touring ? driver.tour : Math.max(driver.floor, driver.scroll);
+  if (stage) stage.setAct(k, { touring: driver.touring });
+  presentAct(k);
 }
-function setSequence(p) {
-  seqProgress = p;
-  if (stage) stage.setSequence(p);
-  for (const li of labels) showLabel(li, p >= parseFloat(li.dataset.at));
-  showClose(p >= 0.9);
+function onScrollAct(p) {
+  driver.scroll = p * N_ACTS;
+  if (driver.touring && p > 0.0015) { driver.touring = false; driver.floor = driver.tour; driver.idle = 0; }
 }
-// labels follow their anchors on the horse (on phones they are a static strip under it)
-const phoneLabels = matchMedia('(max-width: 900px)');
-function placeLabels() {
-  requestAnimationFrame(placeLabels);
+
+// the drop: once the hero lets go, the blob travels with a damped follower to the approval slot
+const anchorGate = $('#anchor-gate');
+// on a phone the slot scrolls away while the drafts are read, so the blob stays near: small, in the corner
+const phoneQ = matchMedia('(max-width: 900px)');
+const approvalEl = $('#approval');
+let cornerV = 0;
+function driveDock() {
   if (!stage) return;
-  if (phoneLabels.matches) { for (const li of labels) { li.style.left = ''; li.style.top = ''; li.style.visibility = ''; } return; }
-  // the list's own origin, not the viewport's: the pinned hero carries a transform, which makes
-  // it the containing block for fixed children, so (0,0) is the hero's corner, not the page's
-  const origin = labelsUl.getBoundingClientRect();
-  for (const li of labels) {
-    const pt = stage.project(parseFloat(li.dataset.u), parseFloat(li.dataset.v));
-    li.style.left = `${(pt.x - origin.left).toFixed(1)}px`;
-    li.style.top = `${(pt.y - origin.top).toFixed(1)}px`;
-    li.style.visibility = pt.inside && li.classList.contains('is-on') ? 'visible' : 'hidden';
+  const rect = anchorGate.getBoundingClientRect();
+  if (rect.width < 10) return;
+  const span = Math.max(1, innerHeight * 0.96);
+  const q = 1 - Math.min(1, Math.max(0, (rect.top - 84) / span));
+  let target = 0;
+  if (phoneQ.matches) {
+    const sec = approvalEl.getBoundingClientRect();
+    target = rect.bottom < innerHeight * 0.22 && sec.bottom > innerHeight * 0.6 ? 1 : 0;
+  }
+  cornerV += (target - cornerV) * (reduced ? 1 : 0.05);
+  stageWrap.classList.toggle('in-corner', cornerV > 0.02);
+  if (cornerV > 0.001) {
+    const S = 112, W = innerWidth, H = innerHeight;
+    const c = cornerV * cornerV * (3 - 2 * cornerV);
+    const lerp = (a, b) => a + (b - a) * c;
+    stage.setDock(q, { left: lerp(rect.left, W - S - 8), top: lerp(rect.top, H - S - 10), width: lerp(rect.width, S), height: lerp(rect.height, S), bottom: lerp(rect.bottom, H - 10) }, c);
+  } else {
+    stage.setDock(q, rect, 0);
   }
 }
-if (stage) placeLabels(); else labels.forEach((li) => { li.hidden = true; });
 
 if (motion) {
   document.documentElement.classList.add('js-motion');
   try {
-    ST.create({
-      trigger: '#hero', start: 'top top', end: '+=320%', pin: true, pinSpacing: true, scrub: 0.6, anticipatePin: 1,
-      onUpdate: (self) => setSequence(self.progress),
-    });
-    setSequence(0);
-    const revealHero = () => {
-      const h1 = $('#h1');
-      let lines = null;
-      if (window.SplitText) {
-        try { lines = window.SplitText.create(h1, { type: 'lines', mask: 'lines', linesClass: 'line' }).lines; } catch (e) { lines = null; }
-      }
-      const tl = G.timeline({ defaults: { ease: 'power4.out' } });
-      if (lines && lines.length) tl.from(lines, { yPercent: 112, duration: 1.15, stagger: 0.085 }, 0.3);
-      else tl.from(h1, { opacity: 0, y: 24, duration: 1.0 }, 0.3);
-      tl.to('.hero .reveal', { opacity: 1, y: 0, duration: 1.0, stagger: 0.12 }, 0.6);
-    };
-    G.set('.hero .reveal', { y: 18 });
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(revealHero); else revealHero();
-
+    ST.create({ trigger: '#hero', start: 'top top', end: '+=520%', pin: true, pinSpacing: true, onUpdate: (self) => onScrollAct(self.progress) });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => G.to('.hero .reveal', { opacity: 1, y: 0, duration: 1.4, stagger: 0.18, ease: 'sine.out', delay: 0.3 }));
+    else G.to('.hero .reveal', { opacity: 1, y: 0, duration: 1.4 });
+    G.set('.hero .reveal', { y: 10 });
     $$('.sec').forEach((sec) => {
-      const items = $$(':scope > .sec-head > .sec-mark, :scope > .sec-head > .h2, :scope > .sec-head > .sec-lede, :scope > .sec-mark, :scope > .h2', sec);
+      const items = $$(':scope > .sec-head > .sec-mark, :scope > .sec-head > .h2, :scope > .sec-head > .sec-lede, :scope > .sec-inner > .sec-mark, :scope > .sec-inner > .h2', sec);
       if (!items.length) return;
-      G.set(items, { y: 22 });
-      G.to(items, { opacity: 1, y: 0, duration: 1.0, ease: 'power3.out', stagger: 0.1, scrollTrigger: { trigger: sec, start: 'top 76%', once: true } });
+      G.set(items, { y: 16 });
+      G.to(items, { opacity: 1, y: 0, duration: 1.3, ease: 'sine.out', stagger: 0.12, scrollTrigger: { trigger: sec, start: 'top 78%', once: true } });
     });
     $$('.piece').forEach((p) => {
-      G.set(p, { y: 34 });
-      G.to(p, { opacity: 1, y: 0, duration: 1.1, ease: 'power3.out', scrollTrigger: { trigger: p, start: 'top 84%', once: true } });
-      const img = $('.piece-fig img', p);
-      if (img) G.fromTo(img, { yPercent: -7 }, { yPercent: 7, ease: 'none', scrollTrigger: { trigger: p, start: 'top bottom', end: 'bottom top', scrub: true } });
+      G.set(p, { y: 22 });
+      G.to(p, { opacity: 1, y: 0, duration: 1.4, ease: 'sine.out', scrollTrigger: { trigger: p, start: 'top 86%', once: true } });
     });
-    [['.results', 'top 82%'], ['.hire-grid', 'top 82%'], ['.btn-big', 'top 90%']].forEach(([sel, start]) => {
+    [['.results', 'top 84%'], ['.hire-grid', 'top 84%'], ['.btn-big', 'top 92%']].forEach(([sel, start]) => {
       const el = $(sel);
       if (!el) return;
-      G.set(el, { y: 22 });
-      G.to(el, { opacity: 1, y: 0, duration: 1.0, ease: 'power3.out', scrollTrigger: { trigger: el, start, once: true } });
+      G.set(el, { y: 16 });
+      G.to(el, { opacity: 1, y: 0, duration: 1.3, ease: 'sine.out', scrollTrigger: { trigger: el, start, once: true } });
     });
+    let lastT = performance.now();
+    G.ticker.add(() => { const n = performance.now(); driveActs(Math.min(0.1, (n - lastT) / 1000)); lastT = n; driveDock(); });
   } catch (e) {
     document.documentElement.classList.remove('js-motion');
-    setSequence(1);
   }
-} else {
-  setSequence(1);
 }
+if (!motion) {
+  // no pin, no tour: the sentence, the close and the blob at rest, all at once
+  setLine(4, true);
+  document.documentElement.classList.add('still');
+  heroClose.style.opacity = 1;
+  const tick = () => { if (stage) { stage.setAct(4.9); driveDock(); } };
+  addEventListener('scroll', tick, { passive: true });
+  addEventListener('resize', tick);
+  setInterval(tick, 400);
+}
+
+// the bar sits on the sheet; over the dark section it lets the dark through
+const bar = $('.bar');
+const hireEl = $('#hire');
+new IntersectionObserver(([en]) => bar.classList.toggle('on-night', en.isIntersecting), { rootMargin: '0px 0px -94% 0px' }).observe(hireEl);
 
 // nav: mark the section in view
 const navLinks = $$('.nav a');
@@ -164,41 +200,6 @@ const spy = new IntersectionObserver((entries) => {
   }
 }, { rootMargin: '-40% 0px -55% 0px' });
 ['approval', 'sorting', 'work', 'hire'].forEach((id) => { const el = document.getElementById(id); if (el) spy.observe(el); });
-
-// ---------- sound: off until asked for ----------
-const soundBtn = $('#sound');
-let soundOn = false;
-try { soundOn = localStorage.getItem('rk-sound') === '1'; } catch (e) { soundOn = false; }
-let actx = null;
-const setSound = (on) => {
-  soundOn = on;
-  soundBtn.setAttribute('aria-pressed', String(on));
-  $('.sound-text', soundBtn).textContent = on ? 'Sound on' : 'Sound off';
-  try { localStorage.setItem('rk-sound', on ? '1' : '0'); } catch (e) { /* private window */ }
-};
-setSound(soundOn);
-soundBtn.addEventListener('click', () => { setSound(!soundOn); if (soundOn) thump(0.5); });
-function thump(level = 1) {
-  // a low, soft sound of leather taking weight; no high clicks
-  if (!soundOn) return;
-  try {
-    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-    if (actx.state === 'suspended') actx.resume();
-    const t = actx.currentTime;
-    const o = actx.createOscillator(); o.type = 'sine';
-    o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.18);
-    const g = actx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35 * level, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
-    o.connect(g).connect(actx.destination); o.start(t); o.stop(t + 0.32);
-    const len = Math.floor(actx.sampleRate * 0.12);
-    const buf = actx.createBuffer(1, len, actx.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5);
-    const src = actx.createBufferSource(); src.buffer = buf;
-    const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
-    const g2 = actx.createGain(); g2.gain.value = 0.18 * level;
-    src.connect(lp).connect(g2).connect(actx.destination); src.start(t + 0.01);
-  } catch (e) { /* no audio, no problem */ }
-}
 
 // ---------- the register: numbered, append-only, hash-chained ----------
 const log = $('#log');
@@ -256,10 +257,10 @@ function renderDraft(draft, n) {
     <p class="draft-why"></p>
     <textarea class="draft-text" rows="3" spellcheck="false"></textarea>
     <div class="draft-acts">
-      <button type="button" class="btn btn-dark approve">Approve</button>
-      <button type="button" class="btn btn-ghost-dark reject">Reject</button>
-      <button type="button" class="btn btn-brass send" hidden>Send once</button>
-      <button type="button" class="btn btn-ghost-dark retry" hidden>Agent tries again</button>
+      <button type="button" class="btn btn-solid approve">Approve</button>
+      <button type="button" class="btn reject">Reject</button>
+      <button type="button" class="btn btn-solid send" hidden>Send once</button>
+      <button type="button" class="btn retry" hidden>Agent tries again</button>
     </div>
     <span class="stamp" aria-live="polite"></span>`;
   $('.draft-id', li).textContent = `Draft ${n} · ${draft.id}`;
@@ -284,18 +285,18 @@ function renderDraft(draft, n) {
     const edited = text.value.trim() !== draft.body;
     record(`${draft.id} approved by you${edited ? ', with your edits. Your wording is what goes out.' : '.'}`, 'good');
     setState('approved');
+    if (stage) stage.perk();
     send.focus();
   });
   reject.addEventListener('click', () => {
     record(`${draft.id} rejected by you. Nothing was sent, and it can't be approved later.`, 'good');
     setState('rejected');
-    if (stage) stage.dim();
+    if (stage) stage.closeEyes();
   });
   send.addEventListener('click', async () => {
     if (stage && stage.isBusy()) return;
     send.disabled = true;
     const done = () => {
-      thump();
       sentCount += 1;
       sentEl.textContent = String(sentCount).padStart(2, '0');
       record(`${draft.id} sent once: "${text.value.trim().slice(0, 44)}…" The claim is spent.`, 'good');
@@ -304,7 +305,7 @@ function renderDraft(draft, n) {
     };
     if (stage) {
       const p = stage.surge();
-      setTimeout(done, reduced ? 60 : 520);   // the stamp lands as the head comes up
+      setTimeout(done, reduced ? 60 : 900);   // the stamp lands as the thread takes the draft
       await p;
     } else {
       done();
@@ -357,7 +358,7 @@ function sizeCanvas() {
 }
 function layout() {
   const { w, h, dpr } = sizeCanvas();
-  const padL = 16 * dpr, padR = 16 * dpr, padT = 52 * dpr, padB = 14 * dpr;
+  const padL = 1 * dpr, padR = 1 * dpr, padT = 52 * dpr, padB = 4 * dpr;
   const innerW = w - padL - padR;
   const trayH = Math.round((h - padT - padB) * 0.17);
   const gap = 10 * dpr;
@@ -369,56 +370,49 @@ function slotRect(i, L) {
   const col = i % COLS, row = Math.floor(i / COLS);
   return { x: L.padL + col * L.cw, y: L.padT + row * L.ch, w: L.cw, h: L.ch };
 }
+const INK = '28,27,25', GOLD = '146,108,40';
 function drawRack() {
   const L = layout();
   const { w, h, dpr } = L;
   ctx.clearRect(0, 0, w, h);
   const n = current ? current.length : COLS * ROWS;
-  // the rack: a slab with 150 openings
-  ctx.fillStyle = '#17181b';
-  ctx.fillRect(L.padL - 6 * dpr, L.padT - 6 * dpr, L.innerW + 12 * dpr, L.rackH + 12 * dpr);
+  // the rack, drawn in pencil: 150 openings, the slip inside each as dark as the classifier's weight on it
   for (let i = 0; i < n; i++) {
     const s = slotRect(i, L);
-    const inset = 1.6 * dpr;
+    const inset = 2.4 * dpr;
     const x = s.x + inset, y = s.y + inset, sw = s.w - inset * 2, sh = s.h - inset * 2;
-    // the dark opening
-    ctx.fillStyle = '#0a0b0c';
-    ctx.fillRect(x, y, sw, sh);
-    // the slip of paper inside: brighter where the classifier puts weight
+    ctx.strokeStyle = `rgba(${INK},.2)`;
+    ctx.lineWidth = 0.8 * dpr;
+    ctx.strokeRect(x + 0.5, y + 0.5, sw, sh);
     const p = current ? current[i] : 0;
-    const a = 0.05 + 0.75 * scaleP(p);
+    const a = 0.03 + 0.8 * scaleP(p);
     const rank = topIdx.indexOf(i);
-    ctx.fillStyle = rank === 0 ? `rgba(236,232,225,${Math.min(1, a + 0.2)})` : `rgba(226,220,208,${a})`;
-    const ph = Math.max(2 * dpr, sh * (0.18 + 0.5 * scaleP(p)));
-    ctx.fillRect(x + sw * 0.18, y + sh - ph, sw * 0.64, ph);
-    // the top edge catching light
-    ctx.fillStyle = 'rgba(236,232,225,.09)';
-    ctx.fillRect(s.x, s.y, s.w, 1 * dpr);
+    ctx.fillStyle = `rgba(${INK},${rank === 0 ? Math.min(1, a + 0.15) : a})`;
+    const ph = Math.max(1.5 * dpr, sh * (0.14 + 0.54 * scaleP(p)));
+    ctx.fillRect(x + sw * 0.2, y + sh - ph - 1 * dpr, sw * 0.6, ph);
   }
   // the tray for a person
-  ctx.fillStyle = '#121315';
-  ctx.fillRect(L.padL - 6 * dpr, L.trayY, L.innerW + 12 * dpr, L.trayH);
-  ctx.fillStyle = 'rgba(201,167,101,.85)';
-  ctx.fillRect(L.padL - 6 * dpr, L.trayY, L.innerW + 12 * dpr, 1.2 * dpr);
+  ctx.strokeStyle = `rgba(${GOLD},.75)`;
+  ctx.lineWidth = 1 * dpr;
+  ctx.strokeRect(L.padL + 0.5, L.trayY + 0.5, L.innerW - 1, L.trayH - 1);
   ctx.font = `${9.5 * dpr}px "Martian Mono", ui-monospace, monospace`;
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(201,167,101,.9)';
-  ctx.fillText('FOR A PERSON', L.padL + 8 * dpr, L.trayY + L.trayH / 2);
+  ctx.fillStyle = `rgba(${GOLD},1)`;
+  ctx.fillText('FOR A PERSON', L.padL + 10 * dpr, L.trayY + L.trayH / 2);
   // the message, dropping or resting
   let s = sheet;
   if (drop) {
     const u = Math.min(1, (performance.now() - drop.t0) / drop.dur);
-    const e = u * u * (3 - 2 * u) * (1 - 0.18 * Math.sin(u * Math.PI));   // weight, a touch of bounce
+    const e = u * u * (3 - 2 * u);
     s = { x: drop.toX, y: drop.fromY + (drop.toY - drop.fromY) * e, w: drop.w, h: drop.h };
     if (u >= 1) { sheet = { x: drop.toX, y: drop.toY, w: drop.w, h: drop.h }; drop = null; }
   }
   if (s) {
-    ctx.fillStyle = 'rgba(0,0,0,.45)';
-    ctx.fillRect(s.x + 1.5 * dpr, s.y + 2 * dpr, s.w, s.h);
-    ctx.fillStyle = '#ece8e1';
+    ctx.fillStyle = '#efe8d8';
     ctx.fillRect(s.x, s.y, s.w, s.h);
-    ctx.fillStyle = 'rgba(0,0,0,.18)';
-    ctx.fillRect(s.x, s.y + s.h - 1.5 * dpr, s.w, 1.5 * dpr);
+    ctx.strokeStyle = `rgba(${INK},.95)`;
+    ctx.lineWidth = 1.1 * dpr;
+    ctx.strokeRect(s.x, s.y, s.w, s.h);
   }
   // the strongest slot, named on the rack itself
   if (model && topIdx.length && current) {
@@ -430,9 +424,9 @@ function drawRack() {
     const cx = r.x + r.w / 2;
     const ly = L.padT - 18 * dpr;
     const right = cx + 8 * dpr + tw > w - L.padR;
-    ctx.strokeStyle = 'rgba(236,232,225,.5)'; ctx.lineWidth = 1 * dpr;
-    ctx.beginPath(); ctx.moveTo(cx, r.y - 2 * dpr); ctx.lineTo(cx, ly); ctx.lineTo(right ? cx - 6 * dpr : cx + 6 * dpr, ly); ctx.stroke();
-    ctx.fillStyle = 'rgba(236,232,225,.95)';
+    ctx.strokeStyle = `rgba(${INK},.5)`; ctx.lineWidth = 1 * dpr;
+    ctx.beginPath(); ctx.moveTo(cx, r.y - 1 * dpr); ctx.lineTo(cx, ly); ctx.lineTo(right ? cx - 6 * dpr : cx + 6 * dpr, ly); ctx.stroke();
+    ctx.fillStyle = `rgba(${INK},.95)`;
     ctx.fillText(label, right ? cx - 8 * dpr - tw : cx + 8 * dpr, ly);
   }
 }
@@ -444,7 +438,7 @@ function animateRack() {
     if (current && goal) {
       for (let i = 0; i < current.length; i++) {
         const d = goal[i] - current[i];
-        if (Math.abs(d) > 1e-6) { current[i] += d * (reduced ? 1 : 0.22); moving = true; }
+        if (Math.abs(d) > 1e-6) { current[i] += d * (reduced ? 1 : 0.12); moving = true; }
       }
     }
     drawRack();
@@ -459,7 +453,7 @@ function dropInto(target, tray) {
   if (tray) { toX = L.padL + L.innerW / 2 - w / 2; toY = L.trayY + L.trayH / 2 - h / 2; }
   else { const r = slotRect(target, L); toX = r.x + (r.w - w) / 2; toY = r.y + r.h - h - 2 * L.dpr; }
   sheet = null;
-  drop = { fromY: L.padT - 40 * L.dpr, toX, toY, w, h, t0: performance.now(), dur: reduced ? 1 : 520 };
+  drop = { fromY: L.padT - 40 * L.dpr, toX, toY, w, h, t0: performance.now(), dur: reduced ? 1 : 900 };
 }
 
 function update() {
@@ -518,9 +512,15 @@ fetch('model.json')
     note.textContent = `The model running here is a pruned word-level TF-IDF, 140 weights per intent, small enough to ship in a web page. On 5,500 held-out messages it is ${(x.in_scope_accuracy * 100).toFixed(1)}% accurate on known intents, sends ${(x.out_of_scope_caught * 100).toFixed(1)}% of off-topic messages to a person, and makes a wrong automatic move ${(x.wrong_auto_rate * 100).toFixed(1)}% of the time. The JavaScript matches the Python version on 400 of 400 test messages.`;
     drawRack();
     update();
+    if (hasGL && !params.has('nogl')) {
+      createStage($('#stage'), { reduced, model: m })
+        .then((st) => { stage = st; window.__stage = st; requestAnimationFrame(() => stageWrap.classList.add('live')); })
+        .catch(() => { stageWrap.classList.add('nogl'); });
+    }
   })
   .catch(() => { verdict.textContent = "The model didn't load. Reload the page to try again."; });
 
 // ---------- dev hooks ----------
 window.__stage = stage;
-window.__seq = setSequence;
+window.__driver = driver;
+window.__labReady = true;
