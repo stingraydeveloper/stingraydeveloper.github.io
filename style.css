@@ -1,6 +1,9 @@
 /* Ray K. · the blob. Two grounds, one design: every colour is a token, and data-theme on <html> picks them.
    Sentient for reading and display, Cabinet Grotesk for small interface text, in sentence case at a size you
    can read, and Martian Mono only where the machine itself is speaking. */
+@font-face { font-family: "Sentient"; src: url("fonts/sentient.woff2") format("woff2"); font-weight: 200 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Cabinet Grotesk"; src: url("fonts/cabinet-grotesk.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Martian Mono"; src: url("fonts/martian-mono.woff2") format("woff2"); font-weight: 300 600; font-stretch: 75% 112.5%; font-style: normal; font-display: swap; }
 :root, [data-theme="light"] {
   color-scheme: light;
   --ground: #ece5d4;
