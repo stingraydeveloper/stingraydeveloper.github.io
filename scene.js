@@ -47,10 +47,16 @@ const FRAG = `
     vec3 a = texture2D(tA, iuv).rgb;
     vec3 b = texture2D(tB, iuvB).rgb;
     vec3 img = mix(a, b, uMix);
-    // outside the image there is only the bench; the left edge fades over 9% so the floor has no seam
+    // outside the image there is only the page; the left edge fades over 9% so the floor has no seam
     float inl = smoothstep(0.0, 0.09, iuv.x);
     vec2 inb = smoothstep(0.0, 0.025, iuv) * smoothstep(0.0, 0.025, 1.0 - iuv);
-    img = mix(uBg, img, inl * inb.y * smoothstep(0.0, 0.025, 1.0 - iuv.x));
+    float cover = inl * inb.y * smoothstep(0.0, 0.025, 1.0 - iuv.x);
+    // left of the muzzle and above the reins there is nothing but backdrop, in every frame including
+    // the taut reins of the strain frame: the stage contributes nothing there
+    float line = max(0.12, 0.28 + 1.23 * iuv.x);
+    float open = smoothstep(0.27, 0.21, iuv.x) * smoothstep(line + 0.02, line + 0.1, iuv.y);
+    cover *= 1.0 - open;
+    img = mix(uBg, img, cover);
     // the photograph's own backdrop and floor are a neutral dark grey; they become the page's
     // graphite so the still has no edge. Leather is warm and metal is bright, so both survive.
     float lum0 = dot(img, vec3(0.3, 0.59, 0.11));
@@ -73,7 +79,7 @@ const FRAG = `
     float n = noise(iuv * 9.0 + uTime * 0.05) * 0.14;
     float form = smoothstep(0.0, 0.22, uReveal * 1.35 - dist * 0.9 + n - 0.1);
     float vis = max(form, key * smoothstep(0.0, 0.35, uReveal + 0.35));
-    vec3 col = img * vis;
+    vec3 col = mix(uBg, img, vis);               // unrevealed means the page's graphite, never black
     // the core breathes; the eye follows it
     float breath = 0.5 + 0.5 * sin(uTime * 1.1);
     float core = uCoreLevel * (0.82 + 0.18 * breath);
@@ -90,9 +96,9 @@ const FRAG = `
     vec2 e = smoothstep(0.0, fe, vUv) * smoothstep(0.0, fe, 1.0 - vUv);
     float feather = uFeather > 0.0 ? e.x * e.y : 1.0;
     col = mix(uBg, col, feather);
-    // grain, quiet and slow
+    // grain, quiet and slow, only where the photograph is
     float g = hash(vUv * 900.0 + floor(uTime * 5.0) * 0.37) - 0.5;
-    col += g * uGrain;
+    col += g * uGrain * cover;
     gl_FragColor = vec4(col, 1.0);
   }`;
 
