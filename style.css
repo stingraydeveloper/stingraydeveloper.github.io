@@ -21,7 +21,7 @@
   --serif: "Sentient", Georgia, "Times New Roman", serif;
   --mono: "Martian Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --gutter: clamp(20px, 4.2vw, 72px);
-  --maxw: 1480px;
+  --maxw: 1760px;
   --ease-out: cubic-bezier(.22, 1, .36, 1);
 }
 
@@ -117,7 +117,7 @@ img { max-width: 100%; height: auto; }
 .hero {
   position: relative; z-index: 2; height: 100svh; min-height: 560px;
   display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 6fr); align-items: center;
-  padding: 14vh var(--gutter) 10vh; max-width: var(--maxw); margin: 0 auto;
+  padding: 14vh var(--gutter) 10vh; margin: 0;    /* full width: the horse uses the whole screen */
 }
 .hero-copy { position: relative; }
 .hero-close { margin-top: 1.6rem; }
@@ -136,8 +136,8 @@ html:not(.js-motion) .hero-close > * { opacity: 1; }
 .labels li.is-on { visibility: visible; }
 .labels li .lbl-box { display: inline-block; padding: .35em .6em .4em; border-radius: 4px; background: rgba(20, 21, 22, .78); }
 .labels li .lbl-box > span { display: block; }
-.labels li .lbl-part { font: 400 .54rem/1.3 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--ash); }
-.labels li .lbl-name { font: 500 .76rem/1.25 var(--mono); letter-spacing: .04em; color: var(--bone); }
+.labels li .lbl-part { font: 400 clamp(.54rem, .42vw, .72rem)/1.3 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--ash); }
+.labels li .lbl-name { font: 500 clamp(.76rem, .58vw, 1rem)/1.25 var(--mono); letter-spacing: .04em; color: var(--bone); }
 .labels li::before { content: ""; position: absolute; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 10px rgba(255, 177, 102, .85); }
 .labels li::after { content: ""; position: absolute; background: var(--bone-60); }
 /* left: text hangs left of the dot */
@@ -265,6 +265,9 @@ html.lenis, html.lenis body { height: auto; }
 .lenis.lenis-smooth { scroll-behavior: auto !important; }
 
 /* ---------- responsive ---------- */
+@media (max-width: 1440px) {
+  .eyebrow-more { display: none; }   /* the hours line wraps to an orphaned second line below this width */
+}
 @media (max-width: 1100px) {
   .hero { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
 }
@@ -294,7 +297,7 @@ html.lenis, html.lenis body { height: auto; }
   .sorter-grid, .piece, .hire-grid { grid-template-columns: minmax(0, 1fr); }
   .gate { display: grid; row-gap: 18px; padding-top: clamp(72px, 10vh, 120px); }
   .gate-grid, .record { display: contents; }
-  .anchor-slot { order: 0; height: clamp(200px, 32vh, 280px); }
+  .anchor-slot { order: 0; height: clamp(220px, 60vw, 460px); }   /* about the image's own aspect, so the head is in */
   .counter { order: 1; }
   .gate > .sec-head { order: 2; margin-top: 28px; }
   .drafts { order: 3; margin-top: 10px; }

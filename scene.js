@@ -155,7 +155,7 @@ export function createStage(canvas, options = {}) {
 
   // ---- state ----
   const state = { frame: 0, frameB: 0, mix: 0, reveal: reduced ? 1 : 0, core: 0.55, eye: 1, drop: 0, seq: 0 };
-  const anchors = { a: null, b: null };
+  const anchors = { a: null, b: null, copy: null };
   let W = 1, H = 1;
   let running = true;
   let shown = { x: 0, y: 0, w: 1, h: 1 };
@@ -208,20 +208,34 @@ export function createStage(canvas, options = {}) {
     let sx, sy, ox, oy;
     const fx = FOCUS_UV[0], fy = 1 - FOCUS_UV[1];
     if (qa >= 1.1) {
-      // In the hero the image takes the right 85% of the frame so the headline has the left; in the
-      // slot it covers the whole rect. Between, the occupancy eases from one to the other.
-      const occ = 0.8 + 0.2 * ease(t);
+      // In the hero the image takes the right 80% of the frame so the headline has the left, and
+      // never more than 92% of the height so the ears clear the header; in the slot it covers the
+      // whole rect. Between, the occupancy eases from one to the other.
+      const occHero = Math.min(0.8, (0.92 * ia) / qa);
+      const occ = occHero + (1 - occHero) * ease(t);
       sx = 1 / occ;
       ox = -(1 - occ) / occ;                   // right-aligned
       const hb = (qa * occ) / ia;              // image height as a fraction of the quad height
       if (hb >= 1) { sy = 1 / hb; oy = THREE.MathUtils.clamp(fy - sy * 0.5, 0, 1 - sy); }
       else { sy = 1 / hb; oy = 0; }            // shorter than the quad: sit on the bench, dark above
     } else {
-      const zoom = 1.04;                       // the whole horse, reins included
-      sx = 1 / zoom;
-      ox = THREE.MathUtils.clamp(0.6 - sx * 0.5, 0, 1 - sx);
-      const hb = Math.min(1, (qa / ia) * zoom); // band height as a fraction of the quad
+      let zoom = 1.04;                         // the whole horse, reins included
+      let hb = Math.min(1, (qa / ia) * zoom);  // band height as a fraction of the quad
       const v0 = t > 0 ? (1 - hb) * 0.5 : 0.15; // above the label strip in the hero, centred in the slot
+      if (t === 0 && anchors.copy) {
+        // on tall portrait screens (tablets) the band must start below the copy, so it shrinks to fit
+        const rc = rectOf(anchors.copy);
+        const quadTop = r.cy - h / 2;
+        const bandTop = quadTop + h * (1 - v0 - hb);
+        const bandBottom = quadTop + h * (1 - v0);
+        const minTop = rc.bottom + 24;
+        if (bandTop < minTop) {
+          hb = Math.max(80, bandBottom - minTop) / h;
+          zoom = (hb * ia) / qa;
+        }
+      }
+      sx = 1 / zoom;
+      ox = sx <= 1 ? THREE.MathUtils.clamp(0.6 - sx * 0.5, 0, 1 - sx) : (1 - sx) / 2;  // centred when letterboxed
       sy = 1 / hb;
       oy = -v0 / hb;
     }
@@ -325,7 +339,7 @@ export function createStage(canvas, options = {}) {
   let busy = false;
   const api = {
     renderer, state, project,
-    setAnchors(a, b) { anchors.a = a; anchors.b = b; },
+    setAnchors(a, b, copy = null) { anchors.a = a; anchors.b = b; anchors.copy = copy; },
     // the scroll sequence: p in [0,1]. Darkness, the form, then the harness piece by piece.
     setSequence(p) {
       state.seq = p;

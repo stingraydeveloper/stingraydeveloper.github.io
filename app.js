@@ -27,7 +27,7 @@ try {
   stage = null;
 }
 if (stage) {
-  stage.setAnchors($('#hero'), $('#anchor-gate'));
+  stage.setAnchors($('#hero'), $('#anchor-gate'), $('.hero-copy'));
   requestAnimationFrame(() => requestAnimationFrame(() => stageWrap.classList.add('live')));
 } else {
   stageWrap.classList.add('nogl');
@@ -55,6 +55,7 @@ $$('a[href^="#"]').forEach((a) => a.addEventListener('click', (e) => {
 }));
 
 // ---------- the harness sequence ----------
+const labelsUl = $('#labels');
 const labels = $$('#labels li');
 const heroClose = $('#hero-close');
 let seqProgress = 0;
@@ -94,10 +95,13 @@ function placeLabels() {
   requestAnimationFrame(placeLabels);
   if (!stage) return;
   if (phoneLabels.matches) { for (const li of labels) { li.style.left = ''; li.style.top = ''; li.style.visibility = ''; } return; }
+  // the list's own origin, not the viewport's: the pinned hero carries a transform, which makes
+  // it the containing block for fixed children, so (0,0) is the hero's corner, not the page's
+  const origin = labelsUl.getBoundingClientRect();
   for (const li of labels) {
     const pt = stage.project(parseFloat(li.dataset.u), parseFloat(li.dataset.v));
-    li.style.left = `${pt.x.toFixed(1)}px`;
-    li.style.top = `${pt.y.toFixed(1)}px`;
+    li.style.left = `${(pt.x - origin.left).toFixed(1)}px`;
+    li.style.top = `${(pt.y - origin.top).toFixed(1)}px`;
     li.style.visibility = pt.inside && li.classList.contains('is-on') ? 'visible' : 'hidden';
   }
 }
