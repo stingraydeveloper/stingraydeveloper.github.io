@@ -14,23 +14,23 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@1&f[]=sentient@1&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Martian+Mono:wdth,wght@75..112.5,300..600&display=swap">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23141516'/%3E%3Ccircle cx='16' cy='16' r='9.5' fill='none' stroke='%23c9a765' stroke-width='1.6'/%3E%3Ccircle cx='16' cy='16' r='5.5' fill='%236e86a6'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23141516'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23ffb166'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23ffb166' stroke-opacity='.35' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
-<link rel="preload" as="image" href="assets/shutter-poster.jpg" fetchpriority="high">
+<link rel="preload" as="image" href="assets/horse/f6-1920.jpg" media="(min-width: 901px)" fetchpriority="high">
+<link rel="preload" as="image" href="assets/horse/f6-1280.jpg" media="(max-width: 900px)" fetchpriority="high">
 <script type="importmap">{"imports":{"three":"./vendor/three.module.min.js","three/addons/":"./vendor/jsm/"}}</script>
 </head>
 <body>
-<a class="skip" href="#gate">Skip to the demos</a>
+<a class="skip" href="#approval">Skip to the demos</a>
 
 <div class="stage" id="stage-wrap" aria-hidden="true">
   <canvas id="stage"></canvas>
   <picture>
-    <source media="(max-width: 900px)" srcset="assets/shutter-poster-m.jpg">
-    <img class="poster" id="poster" src="assets/shutter-poster.jpg" alt="" width="1600" height="1000" decoding="async" fetchpriority="high">
+    <source media="(max-width: 900px)" srcset="assets/horse/f6-1280.jpg">
+    <img class="poster" id="poster" src="assets/horse/f6-1920.jpg" alt="" width="1920" height="1200" decoding="async" fetchpriority="high">
   </picture>
 </div>
 <div class="grain" aria-hidden="true"></div>
-<div class="flash" id="flash" aria-hidden="true"></div>
 
 <header class="bar">
   <a class="mark" href="#top" aria-label="Ray K., top of page">
@@ -38,8 +38,8 @@
     <span class="mark-handle">stingraydeveloper</span>
   </a>
   <nav class="nav" aria-label="Sections">
-    <a href="#gate" data-nav="gate"><span class="nav-long">The gate</span><span class="nav-short">Gate</span></a>
-    <a href="#sorter" data-nav="sorter"><span class="nav-long">The sorter</span><span class="nav-short">Sorter</span></a>
+    <a href="#approval" data-nav="approval">Approval</a>
+    <a href="#sorting" data-nav="sorting">Sorting</a>
     <a href="#work" data-nav="work">Work</a>
     <a href="#hire" data-nav="hire">Hire</a>
   </nav>
@@ -50,48 +50,58 @@
 
 <section class="hero" id="hero">
   <div class="hero-copy">
-    <p class="eyebrow reveal">AI agents · Fixed-price milestones on Upwork<span class="eyebrow-more"> · Evenings and weekends, Mountain Time</span></p>
+    <!-- block: availability. Remove the span for a version without hours. -->
+    <p class="eyebrow reveal">AI agents · Fixed-price milestones<span class="eyebrow-more" data-block="availability"> · Evenings and weekends, Mountain Time</span></p>
     <h1 class="h1" id="h1">I build AI agents that do real work, and can't send a thing until you say so.</h1>
-    <p class="lede reveal">An agent reads your messages, keeps your records current and drafts the reply. The draft waits behind a shutter. The agent has no release. You do.</p>
-    <div class="cta-row reveal">
-      <a class="btn btn-brass" href="https://www.upwork.com/freelancers/~01b7901955d36b88ee">Hire me on Upwork</a>
-      <a class="btn btn-ghost" href="#gate">Try the two demos</a>
+    <div class="hero-close" id="hero-close">
+      <p class="close-line">It doesn't move until you do.</p>
+      <p class="lede">An agent reads your messages, keeps your records current and drafts the reply. The draft waits. The reins are on your side of the bench.</p>
+      <div class="cta-row">
+        <a class="btn btn-brass" data-profile href="#hire">Work with me</a>
+        <a class="btn btn-ghost" href="#approval">Try the demos</a>
+      </div>
     </div>
   </div>
-  <div class="hero-object">
-    <div class="anchor" id="anchor-hero"></div>
-    <p class="plate" aria-hidden="true"><span>Leaf shutter</span><span>Nine blades · closed</span><span>Release on your side</span></p>
-  </div>
+  <div class="hero-object" aria-hidden="true"></div>
+  <ul class="labels" id="labels" aria-label="The parts of the harness">
+    <li class="side-left" data-u="0.548" data-v="0.36" data-at="0.27"><span class="lbl-part">collar</span><span class="lbl-name">skills</span></li>
+    <li class="side-up" data-u="0.69" data-v="0.31" data-at="0.385"><span class="lbl-part">back pad</span><span class="lbl-name">subagents</span></li>
+    <li class="side-down" data-u="0.652" data-v="0.605" data-at="0.43"><span class="lbl-part">girth</span><span class="lbl-name">log</span></li>
+    <li class="side-up" data-u="0.765" data-v="0.44" data-at="0.505"><span class="lbl-part">traces</span><span class="lbl-name">tools · MCP</span></li>
+    <li class="side-right" data-u="0.86" data-v="0.455" data-at="0.625"><span class="lbl-part">breeching</span><span class="lbl-name">hooks</span></li>
+    <li class="side-up" data-u="0.39" data-v="0.2" data-at="0.745"><span class="lbl-part">bridle</span><span class="lbl-name">instructions</span></li>
+    <li class="side-right" data-u="0.345" data-v="0.63" data-at="0.865"><span class="lbl-part">reins</span><span class="lbl-name">approval</span></li>
+  </ul>
   <p class="scroll-cue" aria-hidden="true"><span class="scroll-line"></span>Scroll</p>
 </section>
 
-<section class="sec gate" id="gate" aria-labelledby="gate-title">
+<section class="sec gate" id="approval" aria-labelledby="approval-title">
   <header class="sec-head">
-    <p class="sec-mark">01 · The gate</p>
-    <h2 class="h2" id="gate-title">Three drafts are waiting for you.</h2>
+    <p class="sec-mark">01 · Approval</p>
+    <h2 class="h2" id="approval-title">Three drafts are waiting for you.</h2>
     <p class="sec-lede">The agent wrote them. It can ask for approval, check on it and collect the approved text. It has no tool that can approve, so an instruction hidden in a stranger's email has nothing to pull.</p>
   </header>
   <div class="gate-grid">
-    <ol class="proofs" id="proofs" aria-label="Drafts waiting for approval"></ol>
-    <aside class="record" aria-label="The shutter and its record">
+    <ol class="drafts" id="drafts" aria-label="Drafts waiting for approval"></ol>
+    <aside class="record" aria-label="The agent and its register">
       <div class="anchor anchor-slot" id="anchor-gate"></div>
       <div class="counter" aria-live="polite">
-        <span class="counter-label">Frames fired</span>
-        <span class="counter-num" id="frame">0000</span>
+        <span class="counter-label">Sent · once each</span>
+        <span class="counter-num" id="sent">00</span>
       </div>
       <button class="btn btn-ghost btn-small" id="self-approve" type="button">Let the agent approve its own draft</button>
-      <h3 class="record-title">Record · append-only · hash-chained</h3>
-      <ol class="log" id="log" aria-live="polite" aria-label="Record of events"></ol>
+      <h3 class="record-title">Register · numbered · hash-chained</h3>
+      <ol class="log" id="log" aria-live="polite" aria-label="Register of events"></ol>
     </aside>
   </div>
   <p class="sec-foot">These drafts run in your browser with the same rules as <a href="https://github.com/stingraydeveloper/approval-gate">approval-gate</a>, my open-source MCP server: TypeScript, 15 tests, CI. It works with any agent that speaks MCP.</p>
 </section>
 
-<section class="sec sorter" id="sorter" aria-labelledby="sorter-title">
+<section class="sec sorter" id="sorting" aria-labelledby="sorting-title">
   <header class="sec-head">
-    <p class="sec-mark">02 · The sorter</p>
-    <h2 class="h2" id="sorter-title">Not everything needs a language model.</h2>
-    <p class="sec-lede">This classifier sorts a customer message into one of 150 intents, in your browser, with nothing sent to a server. When it isn't sure, the message goes to a person. It knows banking, travel, home and small talk, because that is what its public training set covers.</p>
+    <p class="sec-mark">02 · Sorting</p>
+    <h2 class="h2" id="sorting-title">Not everything needs a language model.</h2>
+    <p class="sec-lede">This classifier sorts a customer message into one of 150 pigeonholes, in your browser, with nothing sent to a server. When it isn't sure, the message goes to the tray for a person. It knows banking, travel, home and small talk, because that is what its public training set covers.</p>
   </header>
   <div class="sorter-grid">
     <div class="slit">
@@ -103,11 +113,11 @@
         <button type="button" class="try">my neighbour's dog keeps digging up the fence</button>
       </div>
     </div>
-    <div class="spectrum-wrap">
-      <div class="spectrum-frame">
-        <canvas id="spectrum" class="spectrum" role="img" aria-label="The classifier's confidence across all 150 intents, drawn as spectral lines"></canvas>
-        <span class="spectrum-cap spectrum-cap-l">150 intents</span>
-        <span class="spectrum-cap spectrum-cap-r" id="threshold-cap">threshold</span>
+    <div class="rack-wrap">
+      <div class="rack-frame">
+        <canvas id="rack" class="rack" role="img" aria-label="A rack of 150 pigeonholes, one per intent, with the message dropped into the slot the classifier chose, or into the tray for a person"></canvas>
+        <span class="rack-cap rack-cap-l">150 pigeonholes · one per intent</span>
+        <span class="rack-cap rack-cap-r" id="threshold-cap">threshold</span>
       </div>
       <ol class="peaks" id="peaks" aria-label="Top three intents"></ol>
       <p class="verdict" id="verdict" aria-live="polite">Loading the model…</p>
@@ -132,22 +142,23 @@
   <header class="sec-head">
     <p class="sec-mark">03 · Work</p>
     <h2 class="h2" id="work-title">What I've built.</h2>
-    <p class="sec-lede">The pictures are still lifes I art-directed, one instrument per project. The real systems live inside companies and can't be shown.</p>
+    <p class="sec-lede">The pictures are still lifes I art-directed, one object per project. The real systems live inside companies and can't be shown.</p>
   </header>
   <ol class="pieces">
     <li class="piece">
-      <figure class="piece-fig"><img src="assets/mcp-layer-800.jpg" srcset="assets/mcp-layer-800.jpg 800w, assets/mcp-layer-1600.jpg 1600w" sizes="(max-width: 900px) 92vw, 40vw" width="1600" height="1200" loading="lazy" decoding="async" alt="Still life: a lens mount adapter ring on a dark bench. One mount fits many bodies."></figure>
+      <figure class="piece-fig"><img src="assets/mcp-layer-800.jpg" srcset="assets/mcp-layer-800.jpg 800w, assets/mcp-layer-1600.jpg 1600w" sizes="(max-width: 900px) 92vw, 40vw" width="1600" height="1200" loading="lazy" decoding="async" alt="Still life: a machined steel letter rack holding six documents with coloured tabs."></figure>
       <div class="piece-copy">
-        <p class="piece-mark">The mount</p>
+        <p class="piece-mark">The rack</p>
         <h3>An MCP layer that 200+ people use every day</h3>
         <p>A VS Code extension and MCP server that connect an AI assistant to Jira, Confluence, GitHub, Jenkins, Snyk and OpenShift at a large financial services company. In production on 12+ teams. Over 10,000 hours of manual story writing saved so far.</p>
         <p class="facts">MCP · VS Code · Jira · Confluence · GitHub · Jenkins · Snyk · OpenShift</p>
       </div>
     </li>
-    <li class="piece">
-      <figure class="piece-fig"><img src="assets/back-office-800.jpg" srcset="assets/back-office-800.jpg 800w, assets/back-office-1600.jpg 1600w" sizes="(max-width: 900px) 92vw, 40vw" width="1600" height="1200" loading="lazy" decoding="async" alt="Still life: a contact sheet on a light table, one frame circled in red grease pencil."></figure>
+    <!-- block: back-office. Remove this whole <li> for a version without the small-business project. -->
+    <li class="piece" data-block="back-office">
+      <figure class="piece-fig"><img src="assets/back-office-800.jpg" srcset="assets/back-office-800.jpg 800w, assets/back-office-1600.jpg 1600w" sizes="(max-width: 900px) 92vw, 40vw" width="1600" height="1200" loading="lazy" decoding="async" alt="Still life: three stacked steel in-trays with sorted papers and a closed envelope on top."></figure>
       <div class="piece-copy">
-        <p class="piece-mark">The proofing table</p>
+        <p class="piece-mark">The in-trays</p>
         <h3>The back office of my own small business</h3>
         <p>An agent system that reads email, SMS and WhatsApp, keeps the CRM and task list current, puts commitments on the calendar, fills PDF contracts and files documents. Client replies wait as drafts until a person sends them. It runs every day, for a real business, with real customers on the other end.</p>
         <p class="facts">Email · SMS · WhatsApp · CRM · Calendar · PDF forms · Filing</p>
@@ -163,18 +174,18 @@
       </div>
     </li>
     <li class="piece">
-      <figure class="piece-fig"><img src="assets/approval-gate-800.jpg" srcset="assets/approval-gate-800.jpg 800w, assets/approval-gate-1600.jpg 1600w" sizes="(max-width: 900px) 92vw, 40vw" width="1600" height="1200" loading="lazy" decoding="async" alt="Still life: a closed leaf shutter with blued-steel blades and a brass scale ring."></figure>
+      <figure class="piece-fig"><img src="assets/approval-gate-800.jpg" srcset="assets/approval-gate-800.jpg 800w, assets/approval-gate-1600.jpg 1600w" sizes="(max-width: 900px) 92vw, 40vw" width="1600" height="1200" loading="lazy" decoding="async" alt="Still life, close up: a stitched leather strap through a brass buckle against machined metal panels."></figure>
       <div class="piece-copy">
-        <p class="piece-mark">The shutter</p>
+        <p class="piece-mark">The harness</p>
         <h3>approval-gate</h3>
         <p>The MCP server behind the first demo. Three tools: request approval, check on it, claim the approved text. None of them approves. Requests carry an idempotency key, approved text can be claimed once, and the log is append-only and hash-chained so a casual edit shows up.</p>
         <p class="facts">TypeScript · 15 tests · CI · Open source</p>
       </div>
     </li>
     <li class="piece">
-      <figure class="piece-fig"><img src="assets/intent-router-800.jpg" srcset="assets/intent-router-800.jpg 800w, assets/intent-router-1600.jpg 1600w" sizes="(max-width: 900px) 92vw, 40vw" width="1600" height="1200" loading="lazy" decoding="async" alt="Still life: a glass prism splitting a beam into fine spectral lines on a black card."></figure>
+      <figure class="piece-fig"><img src="assets/intent-router-800.jpg" srcset="assets/intent-router-800.jpg 800w, assets/intent-router-1600.jpg 1600w" sizes="(max-width: 900px) 92vw, 40vw" width="1600" height="1200" loading="lazy" decoding="async" alt="Still life: a dark machined rack of small pigeonholes, one holding a folded note, with a brass-edged tray below."></figure>
       <div class="piece-copy">
-        <p class="piece-mark">The prism</p>
+        <p class="piece-mark">The pigeonholes</p>
         <h3>intent-router</h3>
         <p>Three models on CLINC150, judged by the one number that matters when a classifier acts on its own: how often it makes a wrong move. The hand-written NumPy network is in there too, with its gradients checked against a numerical estimate. It loses to logistic regression, which is the honest result.</p>
         <p class="facts">Python · NumPy · CLINC150 · Open source</p>
@@ -189,14 +200,13 @@
   <h2 class="h2" id="hire-title">How I work.</h2>
   <div class="hire-grid">
     <p>Six years of software development, mostly in regulated financial services. AWS Certified Solutions Architect. BASc, University of Waterloo. I work in the harness you already use, or build one from scratch.</p>
-    <p>We agree on a scope and a fixed price. You fund a milestone on Upwork. You get working software, tests, a written handover and a recorded walkthrough. I work evenings and weekends, Mountain Time, and everything runs through Upwork.</p>
+    <p>We agree on a scope and a fixed price. You fund a milestone. You get working software, tests, a written handover and a recorded walkthrough. <span data-block="availability">I work evenings and weekends, Mountain Time.</span></p>
   </div>
-  <a class="btn btn-brass btn-big" href="https://www.upwork.com/freelancers/~01b7901955d36b88ee">Hire me on Upwork</a>
+  <a class="btn btn-brass btn-big" data-profile href="#hire">Work with me</a>
   <footer class="foot">
     <span>Ray K. · stingraydeveloper</span>
     <a href="https://github.com/stingraydeveloper/approval-gate">approval-gate</a>
     <a href="https://github.com/stingraydeveloper/intent-router">intent-router</a>
-    <span>Work and payment stay on Upwork.</span>
   </footer>
 </section>
 
