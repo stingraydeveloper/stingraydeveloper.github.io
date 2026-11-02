@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Ray K. AI agents that ask first</title>
+<meta name="description" content="I build AI agents that do real work and can't send anything until a person approves it. Try two working demos.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Literata:opsz,wght@7..72,400;7..72,600&family=Overpass+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <p class="plate">Ray K.</p>
+  <nav aria-label="Page">
+    <a href="#gate">Approval</a>
+    <a href="#router">Classifier</a>
+    <a href="#work">Work</a>
+    <a href="#hire">Hire</a>
+  </nav>
+</header>
+
+<main>
+<section class="intro">
+  <h1>I build AI agents that do real work, and can&rsquo;t send anything until you say so.</h1>
+  <p class="lede">An agent reads your messages, keeps your records current and drafts the reply. A person still decides what goes out. Try it below: this is how the agents I build behave.</p>
+</section>
+
+<section id="gate" class="frame" aria-labelledby="gate-title">
+  <div class="frame-head">
+    <h2 id="gate-title">Three drafts are waiting for you</h2>
+    <button type="button" id="self-approve" class="plain">Let the agent approve its own draft</button>
+  </div>
+  <div class="frame-body">
+    <ol class="drafts" id="drafts"></ol>
+    <aside class="log-wrap" aria-label="Activity log">
+      <h3>Log</h3>
+      <ol class="log" id="log" aria-live="polite"></ol>
+    </aside>
+  </div>
+  <p class="frame-foot">These sample drafts run in your browser using the same rules as <a href="https://github.com/stingraydeveloper/approval-gate">approval-gate</a>, my open-source MCP server. It works with any agent that speaks MCP.</p>
+</section>
+
+<section id="router" class="band" aria-labelledby="router-title">
+  <div class="band-text">
+    <h2 id="router-title">Not everything needs a language model</h2>
+    <p>This classifier sorts a customer message into one of 150 intents, right here in your browser, with nothing sent to a server. When it isn&rsquo;t sure, the message goes to a person. It knows banking, travel, home and small-talk requests, because that&rsquo;s what its public training set covers.</p>
+    <p>I trained three models and the most accurate one was the wrong pick: it let 27% of off-topic messages through with confidence. The plain one made about half as many wrong moves. <a href="https://github.com/stingraydeveloper/intent-router">Results and code</a>.</p>
+  </div>
+  <div class="tester">
+    <label for="message">Write a customer message</label>
+    <textarea id="message" rows="3">my card got declined at the store, can you check why</textarea>
+    <div class="tries" aria-label="Examples">
+      <button type="button" class="try">book me a flight to boston on friday</button>
+      <button type="button" class="try">how many days of vacation do i have left</button>
+      <button type="button" class="try">my neighbour&rsquo;s dog keeps digging up the fence</button>
+    </div>
+    <div class="verdict" id="verdict" aria-live="polite">Loading the model&hellip;</div>
+    <ol class="bars" id="bars"></ol>
+    <p class="small" id="model-note"></p>
+  </div>
+</section>
+
+<section id="work" class="work" aria-labelledby="work-title">
+  <h2 id="work-title">What I&rsquo;ve built</h2>
+  <dl>
+    <div>
+      <dt>An MCP layer used by 200+ people</dt>
+      <dd>A VS Code extension and MCP server that connect an AI assistant to Jira, Confluence, GitHub, Jenkins, Snyk and OpenShift at a large financial services company. It&rsquo;s in production on 12+ teams and has saved over 10,000 hours of manual story writing.</dd>
+    </div>
+    <div>
+      <dt>The back office of my own small business</dt>
+      <dd>An agent system that reads email, SMS and WhatsApp, keeps the CRM and task list current, puts commitments on the calendar, fills PDF contracts and files documents. Client replies wait as drafts until a person sends them.</dd>
+    </div>
+    <div>
+      <dt>A voice agent you can phone</dt>
+      <dd>A personal project in Python, with Twilio and a real-time speech model. It holds a conversation and calls tools to book appointments. Latency drove the design, because a pause that&rsquo;s fine in chat makes a phone call feel broken.</dd>
+    </div>
+    <div>
+      <dt>The two demos on this page</dt>
+      <dd>Both are public, with tests: <a href="https://github.com/stingraydeveloper/approval-gate">approval-gate</a> in TypeScript and <a href="https://github.com/stingraydeveloper/intent-router">intent-router</a> in Python, including a neural network written by hand in NumPy. I built them with Claude Code, the way I build most things now.</dd>
+    </div>
+  </dl>
+</section>
+
+<section id="hire" class="hire" aria-labelledby="hire-title">
+  <h2 id="hire-title">How I work</h2>
+  <p>Six years of software development, mostly in regulated financial services. AWS Certified Solutions Architect. I work in the harness you already use, or build one from scratch.</p>
+  <p>We agree on a scope and a fixed price, you fund a milestone, and you get working software, tests, a written handover and a recorded walkthrough. I work evenings and weekends, Mountain Time, and everything runs through Upwork.</p>
+  <a class="cta" href="https://www.upwork.com/freelancers/~01b7901955d36b88ee">Hire me on Upwork</a>
+</section>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>
