@@ -125,6 +125,8 @@ const STRAND_VERT = /* glsl */`
     float farness = smoothstep(1.0, 3.0, lod0);
     // pencil shading: where the light falls the line is finer
     wpx *= mix(1.0, mix(1.22, 0.74, key), farness * uBody);
+    // on the dark ground a wide stroke would glare: from a distance every line is a fine pencil line
+    if (uPaper < 0.5 && uBody > 0.5) wpx *= mix(1.0, min(1.0, 0.0075 / max(width, 1e-4)), farness);
 
     float coc = max(min(uAperture * abs(z - uFocus) / z * uViewport.y, uMaxCoc), clearK * 11.0 * uViewport.y / 900.0);
     float w2 = max(wpx, uMinPx);
@@ -158,17 +160,16 @@ const STRAND_VERT = /* glsl */`
       // lines pile up where the form turns away: thin them, or the edge reads as a nest
       a *= mix(0.42, 1.0, smoothstep(0.02, 0.5, ndv));
       if (uPaper < 0.5) {
-        // light pencil on a dark ground
-        float shade = mix(0.16, 1.5, key) * mix(0.85, 1.0, depth);
+        // light pencil on a dark ground, even in tone, so no one stroke reads as a feature of the face
         float massL = smoothstep(0.99, 0.975, shell);
-        float v = (tone + massL * 0.3) * shade * mix(1.0, 0.9 + 0.5 * key, massL) + 0.015;
-        v += face * uFaceLift * mix(0.5, 1.0, key) * (0.4 + 0.6 * depth);
-        v *= 1.0 - contact * 0.5;
+        float shade = mix(0.8, 1.06, key) * mix(0.9, 1.0, depth);
+        // the same drawing as on the light ground, value for value: its darkest lines are the lightest here
+        float v = (tone > 0.72 ? 0.24 : mix(0.88, 0.5, clamp(tone / 0.72, 0.0, 1.0))) * shade;
         col = ramp(clamp(v, 0.0, 1.0));
         col += vec3(0.80, 0.56, 0.24) * pow(rim, 1.8) * (0.04 + 0.34 * smoothstep(0.3, 0.8, key)) * depth;
-        a *= mix(0.82, 1.0, depth);
-        // the wide light strokes step back near the eyes, so the eyes keep the ground around them
-        a *= mix(1.0, 0.4, massL * (1.0 - smoothstep(1.0, 2.4, ringE)));
+        a *= mix(0.9, 1.0, depth) * mix(1.0, 0.34, massL);
+        // lines thin out over the calm patch around each eye
+        a *= mix(0.3, 1.0, smoothstep(1.0, 2.0, ringE));
       } else {
         // graphite on paper: dark value is the pencil, light strokes are a white pencil on top
         float lit = smoothstep(0.42, 0.98, key);
@@ -259,7 +260,7 @@ const CORE_VERT = /* glsl */`
 
 const CORE_FRAG = /* glsl */`
   precision highp float;
-  uniform float uPaper, uCoreBlur, uBlink, uCoreAlpha; uniform vec3 uKey; uniform vec3 uGround; uniform vec4 uEyeL, uEyeR; uniform vec2 uEyeZ;
+  uniform float uPaper, uCoreBlur, uBlink, uCoreAlpha, uEyePatch; uniform vec3 uKey; uniform vec3 uGround; uniform vec4 uEyeL, uEyeR; uniform vec2 uEyeZ;
   in vec3 vN; in vec3 vP; in vec3 vO;
   out vec4 fragColor;
   float h(vec3 p){ p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3)); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
@@ -293,7 +294,10 @@ const CORE_FRAG = /* glsl */`
       a = smoothstep(0.0, 0.3, ndv);
     }
     float dE = min(length((vO - vec3(uEyeL.xy, uEyeZ.x)) / uEyeL.zwz), length((vO - vec3(uEyeR.xy, uEyeZ.y)) / uEyeR.zwz));
-    col *= 1.0 - (1.0 - smoothstep(0.85, 1.3, dE)) * smoothstep(0.1, 0.45, vO.z) * (uPaper > 0.5 ? 0.22 : 0.5) * (1.0 - uBlink);
+    float nearE = (1.0 - smoothstep(0.85, 1.3, dE)) * smoothstep(0.1, 0.45, vO.z);
+    if (uPaper > 0.5) col *= 1.0 - nearE * 0.22 * (1.0 - uBlink);
+    // on the dark ground: a calm, lighter, matte patch, so the dark oval reads at any size
+    else col = mix(col, vec3(0.2, 0.182, 0.155), uEyePatch * (1.0 - smoothstep(1.0, 1.9, dE)) * smoothstep(0.1, 0.45, vO.z));
     a *= uCoreAlpha;
     fragColor = vec4(col * a, a);
   }`;
@@ -323,7 +327,7 @@ const EYE_VERT = /* glsl */`
 // and ends as a low arc, so no frame of a blink has a corner in it.
 const EYE_FRAG = /* glsl */`
   precision highp float;
-  uniform float uBlink, uPaper; uniform vec2 uLook;
+  uniform float uBlink, uPaper, uRing; uniform vec2 uLook;
   ${NOISE_GLSL}
   in vec3 vL;
   out vec4 fragColor;
@@ -334,15 +338,13 @@ const EYE_FRAG = /* glsl */`
     float wob = vnoise(vec2(ang * 3.1 + 7.0, 1.3)) * 0.05 + vnoise(vec2(ang * 11.0, 4.2)) * 0.022;
     float edgeAA = fwidth(length(l)) * 1.3;
     float edge = 1.0 - smoothstep(0.955 - wob - edgeAA, 0.955 - wob + edgeAA, length(l));
+    // closing, the top of the oval comes down to its own lower arc: the shape squashes, no corner in any frame
     float b = uBlink;
     float arcK = smoothstep(0.72, 1.0, b);
-    float top = mix(1.3, -0.4, b) + mix(-0.62, 0.46, arcK) * l.x * l.x;
-    float thick = mix(2.6, 0.17 * (1.0 - 0.72 * l.x * l.x), arcK * arcK * arcK);
-    float bot = top - thick;
+    float sq = 0.955 * sqrt(max(1.0 - l.x * l.x / (0.955 * 0.955), 0.0));
+    float top = sq * mix(1.08, -0.78, b);
     float aa = fwidth(l.y) * 1.4;
-    float lid = (1.0 - smoothstep(top - aa, top + aa, l.y)) * smoothstep(bot - aa, bot + aa, l.y);
-    float wide = mix(1.0, 1.0 - smoothstep(0.96, 1.04, abs(l.x)), b);
-    float vis = mix(edge, wide, smoothstep(0.75, 1.0, b)) * lid;
+    float vis = edge * (1.0 - smoothstep(top - aa, top + aa, l.y));
     if (vis < 0.01) discard;
     vec3 col = vec3(0.026, 0.021, 0.017);
     col += vec3(0.082, 0.062, 0.040) * smoothstep(0.35, 1.0, -l.y + 0.12 * l.x) * smoothstep(1.05, 0.55, length(l));
@@ -351,8 +353,13 @@ const EYE_FRAG = /* glsl */`
     col += vec3(0.98, 0.93, 0.83) * (1.0 - smoothstep(0.22, 1.0, d1)) * 0.86;
     float g = vnoise(vec2(l.x * 22.0 + l.y * 9.0, l.y * 34.0 - l.x * 6.0)) * 0.6 + vnoise(l * 60.0) * 0.4;
     col += vec3(0.024, 0.021, 0.018) * g * (uPaper > 0.5 ? 1.5 : 0.6);
-    // in dark ground the closed lid is a light stroke, since a dark one would vanish
-    if (uPaper < 0.5) col = mix(col, vec3(0.8, 0.77, 0.7), arcK);
+    if (uPaper < 0.5) {
+      // a pale edge, so a dark oval carries on a dark ground at any size; closed, the stroke is pale too
+      // the pupil sits high and fills most of it, so the pale shows as a soft crescent below, not a stare
+      float rr = length(l - vec2(0.0, uRing * 0.92)) / (0.955 - wob);
+      float pale = smoothstep(1.0 - uRing - 0.05, 1.0 - uRing + 0.01, rr) * step(0.001, uRing);
+      col = mix(col, vec3(0.86, 0.82, 0.74), max(pale, arcK));
+    }
     fragColor = vec4(col * vis, vis);
   }`;
 
@@ -431,20 +438,23 @@ export function makeShared(atlas, theme = 'light') {
     uViewport: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 }, uFocus: { value: 6 }, uAperture: { value: 0 }, uMaxCoc: { value: 22 },
     uMinPx: { value: 1.05 }, uFarGain: { value: 3.6 }, uCoreBlur: { value: 0 },
     uKey: { value: new THREE.Vector3(-0.48, 0.62, 0.62).normalize() },
-    uPaper: { value: 1 }, uGround: { value: new THREE.Color() }, uFaceLift: { value: 0.28 },
+    uPaper: { value: 1 }, uGround: { value: new THREE.Color() }, uFaceLift: { value: 0.28 }, uEyeRing: { value: 0 }, uEyePatch: { value: 1 },
   };
   setTheme(shared, theme);
   return shared;
 }
+export const EYE_RING_DARK = 0.12;
 export function setTheme(shared, name) {
   const t = THEMES[name] || THEMES.light;
   shared.uPaper.value = t.paper;
   shared.uGround.value.setStyle(t.ground, THREE.LinearSRGBColorSpace);
   shared.uFaceLift.value = t.paper ? 0.28 : 0.16;
+  shared.uEyeRing.value = t.paper ? 0 : EYE_RING_DARK;
+  shared.uEyePatch.value = 0;
 }
 
 export function strandMaterial(shared, { body = 0, breath = { value: 0 } } = {}) {
-  const { uCoreBlur, uGround, ...forStrands } = shared;
+  const { uCoreBlur, uGround, uEyeRing, uEyePatch, ...forStrands } = shared;
   return new THREE.RawShaderMaterial({
     glslVersion: THREE.GLSL3, vertexShader: STRAND_VERT, fragmentShader: STRAND_FRAG,
     transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
@@ -536,7 +546,7 @@ export class Creature {
     this.coreMat = new THREE.RawShaderMaterial({
       glslVersion: THREE.GLSL3, vertexShader: CORE_VERT, fragmentShader: CORE_FRAG, transparent: false,
       blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
-      uniforms: { uBreath: this.breath, uKey: shared.uKey, uPaper: shared.uPaper, uGround: shared.uGround, uCoreBlur: shared.uCoreBlur, uEyeL: U.uEyeL, uEyeR: U.uEyeR, uEyeZ: U.uEyeZ, uBlink: U.uBlink, uCoreAlpha: { value: 1 } },
+      uniforms: { uBreath: this.breath, uKey: shared.uKey, uPaper: shared.uPaper, uGround: shared.uGround, uCoreBlur: shared.uCoreBlur, uEyeL: U.uEyeL, uEyeR: U.uEyeR, uEyeZ: U.uEyeZ, uBlink: U.uBlink, uCoreAlpha: { value: 1 }, uEyePatch: shared.uEyePatch },
     });
     this.core = new THREE.Mesh(SHARED_CORE(), this.coreMat);
     this.core.frustumCulled = false; this.core.renderOrder = order - 2;
@@ -547,7 +557,7 @@ export class Creature {
       const mat = new THREE.RawShaderMaterial({
         glslVersion: THREE.GLSL3, vertexShader: EYE_VERT, fragmentShader: EYE_FRAG,
         blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, transparent: false,
-        uniforms: { uBlink: { value: 0 }, uLook: { value: new THREE.Vector2() }, uPaper: shared.uPaper },
+        uniforms: { uBlink: { value: 0 }, uLook: { value: new THREE.Vector2() }, uPaper: shared.uPaper, uRing: shared.uEyeRing },
       });
       this.eyeMats.push(mat);
       const m = new THREE.Mesh(DOME, mat);
