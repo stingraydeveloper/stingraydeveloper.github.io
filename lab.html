@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Blob lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Martian+Mono:wdth,wght@75..112.5,300..600&display=swap">
+<style>
+  html, body { margin: 0; height: 100%; background: #17130e; overflow: hidden; }
+  canvas { display: block; position: fixed; inset: 0; width: 100vw; height: 100vh; }
+  nav { position: fixed; left: 20px; bottom: 18px; font: 400 10px/1.9 "Martian Mono", ui-monospace, Menlo, monospace; letter-spacing: 0.02em; color: #a59a86; mix-blend-mode: difference; }
+  nav span { display: inline-block; min-width: 6.2em; opacity: 0.6; }
+  nav a { color: inherit; text-decoration: none; margin-right: 1em; }
+  nav a.on { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+  body.hidehud nav { display: none; }
+</style>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.min.js","three/addons/":"./vendor/jsm/"}}</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<nav id="hud" aria-label="Look development options"></nav>
+<script type="module" src="lab.js"></script>
+</body>
+</html>
