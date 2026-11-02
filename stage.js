@@ -1,7 +1,7 @@
 // The page's stage. One fixed transparent canvas over the sheet: the blob, what happens to it in each
 // act, its drop down the page, and how it answers the demo's approval states.
 import * as THREE from 'three';
-import { Creature, buildAtlas, packAsync, makeShared, applyPose, frameShared, strandMesh, FOV } from './blob-render.js';
+import { Creature, buildAtlas, packAsync, makeShared, applyPose, frameShared, strandMesh, depthBody, softShadow, FOV } from './blob-render.js';
 import { unit, smoothstep, surfaceFrame, MACRO_DIR } from './blob-geometry.js';
 import { macroLayout, crewLayout } from './blob-props.js';
 
@@ -22,15 +22,15 @@ function buildPoses(narrow) {
   const hero = { target: [0, -0.03, 0], dir: yp(0, 1), up: Y, dist: 8.4 * k, sx, sy, aperture: 0.0004 };
   return [
     [0, hero],
-    [0.45, { target: [0.12, 0.02, 0], dir: yp(-5, 2), up: Y, dist: 7.6 * k, sx: narrow ? 0 : 0.2, sy, aperture: 0.0004 }],
-    [0.95, { target: [0.12, 0.02, 0], dir: yp(-6, 2), up: Y, dist: 7.4 * k, sx: narrow ? 0 : 0.2, sy, aperture: 0.0004 }],
-    [1.32, { target: macTarget, dir: macDir, up: mac.up, dist: narrow ? 0.72 : 0.56, sx: narrow ? 0 : 0.12, sy: narrow ? 0.17 : 0, aperture: 0.07 }],
-    [1.92, { target: macTarget, dir: macDir, up: mac.up, dist: narrow ? 0.68 : 0.52, sx: narrow ? 0 : 0.12, sy: narrow ? 0.17 : 0, aperture: 0.07 }],
-    [2.32, { target: [narrow ? 0.66 : 0.82, -0.1, 0.2], dir: yp(8, -16), up: Y, dist: narrow ? 21 : 10.5, sx: narrow ? 0 : 0.2, sy, aperture: 0.0004 }],
-    [2.95, { target: [narrow ? 0.66 : 0.82, -0.1, 0.2], dir: yp(10, -14), up: Y, dist: narrow ? 20.5 : 10.2, sx: narrow ? 0 : 0.2, sy, aperture: 0.0004 }],
-    [3.3, { target: [-0.05, -0.1, 0], dir: yp(-8, 7), up: Y, dist: 7.9 * k, sx: narrow ? 0 : 0.2, sy, aperture: 0.0006 }],
-    [3.95, { target: [-0.05, -0.1, 0], dir: yp(-6, 5), up: Y, dist: 7.7 * k, sx: narrow ? 0 : 0.2, sy, aperture: 0.0006 }],
-    [4.42, hero],
+    [0.45, { target: [0.12, 0.02, 0], dir: yp(-3, 2), up: Y, dist: 9.5 * k, sx: narrow ? 0 : 0.16, sy, aperture: 0.0004 }],
+    [0.86, { target: [0.12, 0.02, 0], dir: yp(-4, 2), up: Y, dist: 9.3 * k, sx: narrow ? 0 : 0.16, sy, aperture: 0.0004 }],
+    [1.38, { target: macTarget, dir: macDir, up: mac.up, dist: narrow ? 0.72 : 0.56, sx: narrow ? 0 : 0.12, sy: narrow ? 0.17 : 0, aperture: 0.07 }],
+    [1.84, { target: macTarget, dir: macDir, up: mac.up, dist: narrow ? 0.68 : 0.52, sx: narrow ? 0 : 0.12, sy: narrow ? 0.17 : 0, aperture: 0.07 }],
+    [2.46, { target: [narrow ? 0.66 : 0.82, -0.1, 0.2], dir: yp(8, -16), up: Y, dist: narrow ? 21 : 10.5, sx: narrow ? 0 : 0.2, sy, aperture: 0.0004 }],
+    [2.9, { target: [narrow ? 0.66 : 0.82, -0.1, 0.2], dir: yp(10, -14), up: Y, dist: narrow ? 20.5 : 10.2, sx: narrow ? 0 : 0.2, sy, aperture: 0.0004 }],
+    [3.44, { target: [-0.05, -0.1, 0], dir: yp(-8, 7), up: Y, dist: 7.9 * k, sx: narrow ? 0 : 0.2, sy, aperture: 0.0006 }],
+    [3.92, { target: [-0.05, -0.1, 0], dir: yp(-6, 5), up: Y, dist: 7.7 * k, sx: narrow ? 0 : 0.2, sy, aperture: 0.0006 }],
+    [4.48, hero],
     [5, hero],
     [6.2, hero],
   ];
@@ -76,18 +76,18 @@ export async function createStage(canvas, { reduced = false, tier = pickTier(), 
   const scene = new THREE.Scene();
 
   const atlas = await buildAtlas(model, { size: lo ? 2048 : 4096 });
-  const shared = makeShared(atlas);
+  const shared = makeShared(atlas, document.documentElement.dataset.theme);
   const packOpts = { atlasAspect: atlas.rows, rows: atlas.rows };
-  const [mainP, miniP, streamP, knotP, threadsP, crewP, packetP, goldP, shadowP, noteP, sendP] = await Promise.all([
+  const narrowNow = matchMedia('(max-width: 900px)').matches;
+  const [mainP, miniP, streamP, knotP, threadsP, crewP, packetP, goldP, noteP, sendP] = await Promise.all([
     packAsync({ density: lo ? 0.55 : 1 }, packOpts),
-    packAsync({ density: 0.16, readers: false, seed: 311, widthK: 0.72, mass: { length: 40, count: 16 }, big: { length: 0, count: 0 } }, packOpts),
-    packAsync({ recipe: 'stream' }, packOpts),
+    packAsync({ density: 0.3, readers: false, seed: 311, widthK: 1.7, mass: { length: 150, count: 60 } }, packOpts),
+    packAsync({ recipe: 'stream', args: [narrowNow] }, packOpts),
     packAsync({ recipe: 'skillKnot' }, packOpts),
-    packAsync({ recipe: 'skillThreads' }, packOpts),
+    packAsync({ recipe: 'skillThreads', args: [narrowNow] }, packOpts),
     packAsync({ recipe: 'crewThreads' }, packOpts),
     packAsync({ recipe: 'packet' }, packOpts),
     packAsync({ recipe: 'goldThread' }, packOpts),
-    packAsync({ recipe: 'groundShadow' }, packOpts),
     packAsync({ recipe: 'noteProp' }, packOpts),
     packAsync({ recipe: 'sendThread' }, packOpts),
   ]);
@@ -96,25 +96,35 @@ export async function createStage(canvas, { reduced = false, tier = pickTier(), 
   scene.add(main.root);
   main.gazeTau = 1.5;
   const M = main.strands.material.uniforms;
-  const mac = macroLayout();
+  const mac = macroLayout(narrowNow);
   M.uClearP.value.set(mac.p[0], mac.p[1], mac.p[2]);
 
-  const prop = (packed, order, parent = main.root) => {
-    const m = strandMesh(packed, shared, { body: 0, order });
+  const prop = (packed, order, breath) => {
+    const parent = main.root;
+    const m = strandMesh(packed, shared, breath ? { body: 0, order, breath } : { body: 0, order });
     m.visible = false;
     parent.add(m);
     return m;
   };
-  const shadow = prop(shadowP, 2); shadow.visible = true;
+  const shadow = softShadow(shared, 1);
+  main.root.add(shadow);
   const streamM = prop(streamP, 14);
-  const threadsM = prop(threadsP, 15);
+  const threadsM = prop(threadsP, 15, main.breath);
   const knotM = prop(knotP, 16);
   const crewM = prop(crewP, 12);
   const packetM = prop(packetP, 19);
-  const goldM = prop(goldP, 18);
+  const goldM = prop(goldP, 18, main.breath);
+  const goldMask = depthBody(0.99, main.breath, 17);
+  goldMask.visible = false;
+  main.root.add(goldMask);
   const noteM = prop(noteP, 19);
   const sendM = prop(sendP, 13);
-  goldM.material.uniforms.uDrift.value = 0.001;
+  goldM.material.uniforms.uDrift.value = 0;
+  goldM.material.uniforms.uHug.value = 1;
+  threadsM.material.uniforms.uPressAlpha.value = 1;
+  streamM.material.uniforms.uPressAlpha.value = 1;
+  streamM.material.uniforms.uTailSoft.value = 0.18;
+  streamM.material.uniforms.uDrift.value = 0.001;
   // where the gold lead starts; from the recipe's own arithmetic
   const goldInfo = goldP.info || {};
   goldM.material.uniforms.uLead0.value = goldInfo.leadF ?? 0.8;
@@ -122,7 +132,7 @@ export async function createStage(canvas, { reduced = false, tier = pickTier(), 
 
   const layout = crewLayout();
   const minis = layout.map((m, i) => {
-    const c = new Creature(miniP, shared, { seed: 2 + i * 1.7, order: 20 + i * 4, breathPhase: i * 2.3, eyeScale: 1.32 });
+    const c = new Creature(miniP, shared, { seed: 2 + i * 1.7, order: 20 + i * 4, breathPhase: i * 2.3, eyeScale: 1.25 });
     c.root.position.fromArray(m.p);
     c.root.scale.setScalar(m.s);
     c.root.visible = false;
@@ -141,8 +151,11 @@ export async function createStage(canvas, { reduced = false, tier = pickTier(), 
   let actTarget = 0;
   let goldFade = 1;        // the tour fades the thread before it loops
   let touring = false;
-  let dock = { q: 0, rect: null, corner: 0 };
-  let qShown = 0, squash = 0, squashV = 0, peakV = 0;
+  let dock = { q: 0, rect: null, lead: null };
+  let gazeAt = null, shown = true;
+  const leadCur = new THREE.Vector3().fromArray(goldInfo.leadB || [0, -1, 0]);
+  const leadWant = new THREE.Vector3();
+  let qShown = 0, squash = 0, squashV = 0, peakV = 0, dissolve = 0, fadeMul = 1;
   let pointerSet = false;
   const pointer = new THREE.Vector2();
   let last = performance.now();
@@ -191,17 +204,19 @@ export async function createStage(canvas, { reduced = false, tier = pickTier(), 
 
   function setActs(k, t, dt) {
     // Act 1: rows of numbers drift in and join the body
-    const s1 = ease((k - 0.02) / 0.62), s1t = ease((k - 0.72) / 0.42);
-    streamM.visible = s1 > 0.001 && s1t < 0.999;
-    streamM.material.uniforms.uDraw.value.set(s1 * 1.05, s1t * 1.05 - 0.02);
-    streamM.material.uniforms.uFlow.value = -t * 0.0042;
+    // they appear from the far end toward the body, and the digits drift along them, toward the body
+    const s1 = ease((k - 0.02) / 0.56), s1out = 1 - ease((k - 0.78) / 0.24);
+    streamM.visible = s1 > 0.001 && s1out > 0.001;
+    streamM.material.uniforms.uDraw.value.set(1.2, 1.02 - s1 * 1.14);
+    streamM.material.uniforms.uAlpha.value = s1out;
+    streamM.material.uniforms.uFlow.value = t * 0.03;
     // Act 2: a knot arrives; its threads splice in
-    const k2in = ease((k - 1.24) / 0.3), k2t = ease((k - 1.52) / 0.42), k2out = 1 - ease((k - 2.14) / 0.2);
+    const k2in = ease((k - 1.3) / 0.26), k2t = ease((k - 1.5) / 0.34), k2out = 1 - ease((k - 1.9) / 0.16);
     knotM.visible = k2in > 0.001 && k2out > 0.001;
     threadsM.visible = k2t > 0.001 && k2out > 0.001;
     knotM.material.uniforms.uAlpha.value = k2out;
     threadsM.material.uniforms.uAlpha.value = k2out;
-    const from = new THREE.Vector3().fromArray(mac.knot).addScaledVector(new THREE.Vector3().fromArray(mac.right), 0.34).addScaledVector(new THREE.Vector3().fromArray(mac.n), 0.13).addScaledVector(new THREE.Vector3().fromArray(mac.up), 0.12);
+    const from = new THREE.Vector3().fromArray(mac.knot).addScaledVector(new THREE.Vector3().fromArray(mac.right), narrowNow ? 0.12 : 0.24).addScaledVector(new THREE.Vector3().fromArray(mac.n), 0.05).addScaledVector(new THREE.Vector3().fromArray(mac.up), 0.14);
     const to = new THREE.Vector3().fromArray(mac.knot);
     knotM.position.lerpVectors(from, to, easeInOutSoft(k2in));
     knotM.material.uniforms.uDraw.value.set(0.4 + k2in * 0.8, -0.2);
@@ -211,16 +226,18 @@ export async function createStage(canvas, { reduced = false, tier = pickTier(), 
     const camDist = camera.position.length();
     M.uClear.value = 1 - ease((camDist - 1.5) / 1.3);
     // Act 3: the crew comes up, the threads link them, a small piece of work goes along each in turn
-    const c3 = ease((k - 2.2) / 0.32), c3t = ease((k - 2.32) / 0.42), c3out = 1 - ease((k - 3.05) / 0.22);
+    const c3t = ease((k - 2.4) / 0.36), c3out = 1 - ease((k - 2.94) / 0.18);
     crewM.visible = c3t > 0.001 && c3out > 0.001;
     crewM.material.uniforms.uDraw.value.set(c3t * 1.05, -0.2);
     crewM.material.uniforms.uAlpha.value = c3out;
     crewM.material.uniforms.uFlow.value = -t * 0.003;
     minis.forEach((c, i) => {
-      const on = ease((k - 2.22 - i * 0.05) / 0.3) * c3out;
+      const on = ease((k - 2.3 - i * 0.05) / 0.3) * c3out;
       c.root.visible = on > 0.001;
       if (!c.root.visible) return;
       c.strands.material.uniforms.uDraw.value.set(on * 1.05, -0.2);
+      // the body comes up with its lines, so on a dark ground no black ball appears first
+      c.coreMat.uniforms.uCoreAlpha.value = ease((on - 0.35) / 0.65);
       c.eyeMats.forEach((m) => { m.visible = on > 0.7; });
       c.eyeL.visible = c.eyeR.visible = on > 0.72;
       c.lookTarget.copy(c.mainDir);
@@ -238,8 +255,8 @@ export async function createStage(canvas, { reduced = false, tier = pickTier(), 
       packetM.material.uniforms.uAlpha.value = c3out;
     }
     // Act 4: the gold thread winds on and leads off toward the viewer
-    const g4 = ease((k - 3.12) / 0.78);
-    goldM.visible = g4 > 0.001;
+    const g4 = Math.max(ease((k - 3.1) / 0.84), ease(qShown * 3));
+    goldM.visible = goldMask.visible = g4 > 0.001;
     goldM.material.uniforms.uDraw.value.set(g4 * 1.03, -0.2);
     goldFade += ((touring && k > 4.5 ? 0 : 1) - goldFade) * (1 - Math.exp(-dt / 0.5));
     goldM.material.uniforms.uAlpha.value = goldFade;
@@ -250,15 +267,25 @@ export async function createStage(canvas, { reduced = false, tier = pickTier(), 
   function setGaze(k, t) {
     // reading: the eyes travel slowly along the incoming rows
     const reading = ease(k / 0.2) * (1 - ease((k - 0.9) / 0.2));
-    const crew = ease((k - 2.3) / 0.2) * (1 - ease((k - 3.05) / 0.2));
+    const crew = ease((k - 2.4) / 0.2) * (1 - ease((k - 2.94) / 0.2));
     const gx = 0.72 + 0.26 * Math.sin(t * 0.55), gy = 0.28 + 0.14 * Math.sin(t * 0.37);
-    const hold = pointerSet ? pointer : new THREE.Vector2(0, 0);
+    // at the close it looks at the visitor
+    const closing = ease((k - 4.9) / 0.3) * (1 - ease(qShown * 2));
+    const hold = pointerSet ? pointer.clone().multiplyScalar(1 - closing * 0.8) : new THREE.Vector2(0, 0);
+    main.autoBlink = closing < 0.02;
+    if (gazeAt && dock.rect) {
+      const R = Math.max(Math.min(dock.rect.width * 0.4, dock.rect.height * 0.44), 40);
+      const v = new THREE.Vector2((gazeAt.x - (dock.rect.left + dock.rect.width / 2)) / (R * 2.4), -(gazeAt.y - (dock.rect.top + dock.rect.height / 2)) / (R * 2.4)).clampLength(0, 1);
+      main.lookTarget.copy(v);
+      return;
+    }
     main.lookTarget.set(
       THREE.MathUtils.lerp(THREE.MathUtils.lerp(hold.x, gx, reading), 0.72, crew),
       THREE.MathUtils.lerp(THREE.MathUtils.lerp(hold.y, gy, reading), -0.28, crew),
     );
   }
 
+  let frameDt = 1 / 60;
   function updateResponses(t) {
     // approve: a small lift
     const perk = perkT > 0 ? Math.exp(-(t - perkT) / 0.8) * ease((t - perkT) / 0.25) : 0;
@@ -272,13 +299,12 @@ export async function createStage(canvas, { reduced = false, tier = pickTier(), 
     const G = goldM.material.uniforms, docked = easeInOutSoft(qShown);
     G.uTaut.value = docked;
     G.uSag.value = (1 - strain) * 0.34;
-    if (dock.rect && docked > 0) {
-      const W = innerWidth, H = innerHeight, R = Math.max(Math.min(dock.rect.width * 0.4, dock.rect.height * 0.44), 40);
-      const below = narrowQ.matches;
-      const corner = dock.corner > 0.5;
-      const bx = corner ? -1.45 : below ? -(dock.rect.width * 0.5 - 8) / R : -(dock.rect.width * 0.5 + 26) / R;
-      const by = corner ? -0.3 : below ? -(dock.rect.height * 0.5 + 8) / R : -0.72;
-      G.uLeadB.value.set(bx, by, 0.5);
+    if (dock.rect && dock.lead && docked > 0) {
+      const R = Math.max(Math.min(dock.rect.width * 0.4, dock.rect.height * 0.44), 40);
+      const cx = dock.rect.left + dock.rect.width / 2, cy = dock.rect.top + dock.rect.height / 2;
+      leadWant.set((dock.lead.x - cx) / R, -(dock.lead.y - cy) / R, 0);
+      leadCur.lerp(leadWant, 1 - Math.exp(-frameDt / 0.6));
+      G.uLeadB.value.copy(leadCur);
     }
     const lift = perk * 0.05 + surge * 0.08;
     const stretch = perk * 0.018 + surge * 0.03;
@@ -307,10 +333,24 @@ export async function createStage(canvas, { reduced = false, tier = pickTier(), 
     last = nowMs;
     now += dt;
     const k0 = act;
-    act += (actTarget - act) * (1 - Math.exp(-dt / (reduced ? 0.001 : 0.85)));
+    // damped, and never faster than a set pace, so a hard scroll cannot whip the camera through the acts
+    // the dollies in and out of the macro get the slowest pace; a very hard scroll dissolves instead of racing
+    const inDolly = (act > 0.86 && act < 1.38) || (act > 1.84 && act < 2.46);
+    const pace = ((inDolly ? 0.24 : 0.46) + qShown * 2) * dt;
+    if (!reduced && dissolve === 0 && Math.abs(actTarget - act) > 2.2) dissolve = 1;
+    if (dissolve === 1) {
+      fadeMul = Math.max(0, fadeMul - dt / 0.4);
+      if (fadeMul <= 0) { act = actTarget; qShown = dock.q; squash = 0; squashV = 0; peakV = 0; dissolve = 2; }
+    } else if (dissolve === 2) {
+      fadeMul = Math.min(1, fadeMul + dt / 0.8);
+      if (fadeMul >= 1) dissolve = 0;
+    }
+    const wantStep = (actTarget - act) * (1 - Math.exp(-dt / (reduced ? 0.001 : 0.85)));
+    act += reduced ? wantStep : THREE.MathUtils.clamp(wantStep, -pace, pace);
     // the follower for the drop, with velocity read off it for the squash
     const prevQ = qShown;
-    qShown += (dock.q - qShown) * (1 - Math.exp(-dt / (reduced ? 0.001 : 0.28)));
+    const qStep = (dock.q - qShown) * (1 - Math.exp(-dt / (reduced ? 0.001 : 0.28)));
+    qShown += reduced ? qStep : THREE.MathUtils.clamp(qStep, -0.9 * dt, 0.9 * dt);
     const v = (qShown - prevQ) / Math.max(dt, 1e-3);
     // a damped spring: stretched while it travels, a soft squash when it lands, one settle
     const targetS = reduced ? 0 : THREE.MathUtils.clamp(-v * 0.06, -0.04, 0.04);
@@ -324,6 +364,7 @@ export async function createStage(canvas, { reduced = false, tier = pickTier(), 
   }
 
   function drawFrame(dt, frozen = false) {
+    frameDt = dt;
     const pose = composePose(act);
     const w = canvas.width, h = canvas.height;
     applyPose(camera, pose, w, h);
@@ -333,11 +374,6 @@ export async function createStage(canvas, { reduced = false, tier = pickTier(), 
     main.update(dt, { frozen: frozen || reduced });
     frameShared(shared, camera, renderer, renderer.getPixelRatio(), now, pose);
     renderer.render(scene, camera);
-  }
-
-  function offscreen() {
-    if (!dock.rect || dock.q < 0.999) return false;
-    return dock.rect.bottom < -60 || dock.rect.top > innerHeight + 60;
   }
 
   function adapt(nowMs, dtMs) {
@@ -359,9 +395,7 @@ export async function createStage(canvas, { reduced = false, tier = pickTier(), 
   function loop(nowMs) {
     requestAnimationFrame(loop);
     if (!running || !visible || document.hidden) { last = nowMs; return; }
-    const off = offscreen();
-    canvas.style.visibility = off ? 'hidden' : 'visible';
-    if (off) { last = nowMs; return; }
+    if (!shown) { last = nowMs; return; }
     lastDtMs = nowMs - last;
     const { dt } = step(nowMs);
     drawFrame(dt);
@@ -377,9 +411,13 @@ export async function createStage(canvas, { reduced = false, tier = pickTier(), 
   return {
     camera, renderer, main, minis, shared,
     get act() { return act; },
+    get fadeMul() { return fadeMul; },
     setAct(k, { touring: t = false } = {}) { actTarget = k; touring = t; },
     wrapTour(by) { act -= by; actTarget -= by; },
-    setDock(q, rect, corner = 0) { dock.q = q; dock.rect = rect; dock.corner = corner; },
+    setDock(q, rect, lead = null) { dock.q = q; dock.rect = rect; dock.lead = lead; },
+    setGazeAt(pt) { gazeAt = pt; },
+    setShown(on) { shown = on; canvas.style.visibility = on ? 'visible' : 'hidden'; },
+    snapLead() { if (dock.lead && dock.rect) { const R = Math.max(Math.min(dock.rect.width * 0.4, dock.rect.height * 0.44), 40); leadCur.set((dock.lead.x - dock.rect.left - dock.rect.width / 2) / R, -(dock.lead.y - dock.rect.top - dock.rect.height / 2) / R, 0); } },
     // the approval states
     perk() { perkT = now; },
     surge() { surgeT = now; sendT = now; return new Promise((res) => setTimeout(res, reduced ? 50 : 1300)); },

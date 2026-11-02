@@ -74,6 +74,7 @@ function setClose(on, instant = false) {
   if (closeShown === on) return;
   closeShown = on;
   heroCopy.classList.toggle('is-close', on);
+  $('#hero').classList.toggle('is-close', on);
   if (!G || reduced || instant) { heroClose.style.opacity = on ? 1 : 0; return; }
   G.to(heroClose, { opacity: on ? 1 : 0, y: on ? 0 : 10, duration: 1.2, ease: 'sine.inOut', overwrite: true });
   G.to(['.stem', '#line'], { opacity: on ? 0 : 1, duration: 1.0, ease: 'sine.inOut', overwrite: true });
@@ -84,12 +85,22 @@ function setNote(on) {
   noteShown = on;
   heroCopy.classList.toggle('is-macro', on);
   if (!G || reduced) { heroNote.style.opacity = on ? 1 : 0; return; }
-  G.to($('#stage'), { '--fade': on ? 0 : 1, duration: on ? 1.2 : 1.6, ease: 'sine.inOut', overwrite: 'auto' });
   G.to(heroNote, { opacity: on ? 1 : 0, y: on ? 0 : 6, duration: 1.1, ease: 'sine.inOut', overwrite: true });
+}
+// in the macro the drawing dissolves under the copy, from before the camera arrives until it is well away
+let fadeOn = false, lastK = 0;
+function setFade(on) {
+  if (fadeOn === on) return;
+  fadeOn = on;
+  if (!G || reduced) return;
+  G.to($('#stage'), { '--fade': on ? 0 : 1, duration: on ? 0.9 : 1.8, ease: 'sine.inOut', overwrite: 'auto' });
 }
 function presentAct(k) {
   setLine(Math.min(4, Math.max(0, Math.floor(k + 0.02))));
-  setNote(k > 1.22 && k < 2.1);
+  setNote(k > 1.3 && k < 1.98);
+  const backward = k < lastK - 0.0005;
+  lastK = k;
+  setFade(k > 0.84 && k < (backward || fadeOn && k > 2.3 && backward ? 2.58 : 2.3));
   setClose(k >= 5.2);
 }
 
@@ -110,7 +121,8 @@ function driveActs(dt) {
   if (driver.floor && driver.scroll >= driver.floor) driver.floor = 0;
   const k = driver.touring ? driver.tour : Math.max(driver.floor, driver.scroll);
   if (stage) stage.setAct(k, { touring: driver.touring });
-  presentAct(k);
+  // the copy follows what the camera is actually showing, not the scrollbar
+  presentAct(stage ? stage.act : k);
 }
 function onScrollAct(p) {
   driver.scroll = p * N_ACTS;
@@ -119,42 +131,87 @@ function onScrollAct(p) {
 
 // the drop: once the hero lets go, the blob travels with a damped follower to the approval slot
 const anchorGate = $('#anchor-gate');
-// on a phone the slot scrolls away while the drafts are read, so the blob stays near: small, in the corner
+// Where the blob is. It drops to the approval slot, then to the sorting section, leaves during the work,
+// and ends beside Hire. It glides between docks, and it fades before reaching the bar, so it is never clipped.
 const phoneQ = matchMedia('(max-width: 900px)');
-const approvalEl = $('#approval');
-let cornerV = 0;
+const anchorSort = $('#anchor-sort');
+const anchorHire = $('#anchor-hire');
+const hireBtn = $('.btn-big');
+const BAR_LINE = 76;
+const clamp01 = (x) => Math.min(1, Math.max(0, x));
+const smooth01 = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height, bottom: r.bottom }; };
+let dockCur = null, dockName = 'gate', dockAt = 0, presence = 1, dockLast = performance.now();
+function rackGazePoint() {
+  if (topIdx === undefined || !topIdx.length) return null;
+  const L = layout(), c = canvas.getBoundingClientRect();
+  const tray = verdict.classList.contains('is-person');
+  const s = tray ? { x: L.padL, y: L.trayY, w: L.innerW, h: L.trayH } : slotRect(topIdx[0], L);
+  return { x: c.left + (s.x + s.w / 2) / L.dpr, y: c.top + (s.y + s.h / 2) / L.dpr };
+}
 function driveDock() {
   if (!stage) return;
-  const rect = anchorGate.getBoundingClientRect();
-  if (rect.width < 10) return;
-  const span = Math.max(1, innerHeight * 0.96);
-  const q = 1 - Math.min(1, Math.max(0, (rect.top - 84) / span));
-  let target = 0;
-  if (phoneQ.matches) {
-    const sec = approvalEl.getBoundingClientRect();
-    target = rect.bottom < innerHeight * 0.22 && sec.bottom > innerHeight * 0.6 ? 1 : 0;
-  }
-  cornerV += (target - cornerV) * (reduced ? 1 : 0.05);
-  stageWrap.classList.toggle('in-corner', cornerV > 0.02);
-  if (cornerV > 0.001) {
-    const S = 112, W = innerWidth, H = innerHeight;
-    const c = cornerV * cornerV * (3 - 2 * cornerV);
-    const lerp = (a, b) => a + (b - a) * c;
-    stage.setDock(q, { left: lerp(rect.left, W - S - 8), top: lerp(rect.top, H - S - 10), width: lerp(rect.width, S), height: lerp(rect.height, S), bottom: lerp(rect.bottom, H - 10) }, c);
+  const nowT = performance.now(), dt = Math.min(0.1, (nowT - dockLast) / 1000);
+  dockLast = nowT;
+  const H = innerHeight, phone = phoneQ.matches;
+  const gate = box(anchorGate), sort = box(anchorSort), hire = box(anchorHire);
+  if (gate.width < 10) return;
+  const q = 1 - clamp01((gate.top - 84) / Math.max(1, H * 0.96));
+  const hasSort = sort.width > 10;
+  let name = 'gate', want = 1, target = gate, lead = null, gaze = null;
+  if (hire.top < H * 0.74) {
+    name = 'hire'; target = hire;
+    const b = hireBtn.getBoundingClientRect();
+    lead = phone ? { x: b.left + b.width / 2, y: b.bottom + 2 } : { x: b.right + 3, y: b.top + b.height / 2 };
+    want = phone ? smooth01(BAR_LINE - 16, BAR_LINE + 44, hire.top) : 1;
+  } else if (hasSort && sort.top < H * 0.66) {
+    name = 'sort'; target = sort;
+    want = smooth01(BAR_LINE, BAR_LINE + 70, sort.top);
+    gaze = rackGazePoint();
+    lead = { x: sort.left + sort.width * 0.16, y: sort.top + sort.height * 1.0 };
   } else {
-    stage.setDock(q, rect, 0);
+    // the approval slot; on a wide screen it is held below the bar until the next dock takes over
+    if (phone) want = smooth01(BAR_LINE - 16, BAR_LINE + 44, gate.top);
+    else {
+      target = { ...gate, top: Math.max(gate.top, BAR_LINE), bottom: Math.max(gate.bottom, BAR_LINE + gate.height) };
+      // the slot lets go at the end of the drafts: fade there, before the register can scroll under it
+      want = smooth01(40, 84, gate.top);
+    }
+    lead = phone ? { x: gate.left + 8, y: gate.bottom + 6 } : { x: gate.left - 26, y: target.top + gate.height * 0.82 };
   }
+  if (name !== dockName) { dockName = name; dockAt = nowT; if (presence < 0.03) { dockCur = null; dockAt = nowT - 1800; } }
+  // fading out while the next dock is far away: stay put, never race across the screen
+  if (dockCur && want === 0 && Math.abs(target.top - dockCur.top) > H * 0.5) target = dockCur;
+  if (!dockCur) { dockCur = { ...target }; stage.setDock(q, dockCur, lead); stage.snapLead(); }
+  const settle = smooth01(0, 1.8, (nowT - dockAt) / 1000);
+  const tau = reduced ? 0.0001 : 0.95 + (0.05 - 0.95) * settle;
+  const k = 1 - Math.exp(-dt / tau);
+  for (const f of ['left', 'top', 'width', 'height']) dockCur[f] += (target[f] - dockCur[f]) * k;
+  dockCur.bottom = dockCur.top + dockCur.height;
+  presence += (want - presence) * (reduced ? 1 : 1 - Math.exp(-dt / 0.3));
+  if (presence < 0.004 && want === 0) presence = 0;
+  stageWrap.style.opacity = (presence * stage.fadeMul).toFixed(3);
+  stage.setShown(presence > 0.002);
+  stage.setDock(q, dockCur, lead);
+  stage.setGazeAt(gaze);
+}
+// the hero's copy lets go as the page moves on, before it can reach the bar
+let heroST = null;
+function driveHeroCopy() {
+  if (!heroST) return;
+  const past = scrollY - heroST.end;
+  heroCopy.style.opacity = past > 0 ? (1 - clamp01(past / (innerHeight * 0.16))).toFixed(3) : '';
 }
 
 if (motion) {
   document.documentElement.classList.add('js-motion');
   try {
-    ST.create({ trigger: '#hero', start: 'top top', end: '+=520%', pin: true, pinSpacing: true, onUpdate: (self) => onScrollAct(self.progress) });
+    heroST = ST.create({ trigger: '#hero', start: 'top top', end: '+=520%', pin: true, pinSpacing: true, onUpdate: (self) => onScrollAct(self.progress) });
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => G.to('.hero .reveal', { opacity: 1, y: 0, duration: 1.4, stagger: 0.18, ease: 'sine.out', delay: 0.3 }));
     else G.to('.hero .reveal', { opacity: 1, y: 0, duration: 1.4 });
     G.set('.hero .reveal', { y: 10 });
     $$('.sec').forEach((sec) => {
-      const items = $$(':scope > .sec-head > .sec-mark, :scope > .sec-head > .h2, :scope > .sec-head > .sec-lede, :scope > .sec-inner > .sec-mark, :scope > .sec-inner > .h2', sec);
+      const items = $$(':scope > .sec-head > .h2, :scope > .sec-head > .sec-lede, :scope > .sec-inner > .hire-copy > .h2', sec);
       if (!items.length) return;
       G.set(items, { y: 16 });
       G.to(items, { opacity: 1, y: 0, duration: 1.3, ease: 'sine.out', stagger: 0.12, scrollTrigger: { trigger: sec, start: 'top 78%', once: true } });
@@ -170,7 +227,7 @@ if (motion) {
       G.to(el, { opacity: 1, y: 0, duration: 1.3, ease: 'sine.out', scrollTrigger: { trigger: el, start, once: true } });
     });
     let lastT = performance.now();
-    G.ticker.add(() => { const n = performance.now(); driveActs(Math.min(0.1, (n - lastT) / 1000)); lastT = n; driveDock(); });
+    G.ticker.add(() => { const n = performance.now(); driveActs(Math.min(0.1, (n - lastT) / 1000)); lastT = n; driveDock(); driveHeroCopy(); });
   } catch (e) {
     document.documentElement.classList.remove('js-motion');
   }
@@ -185,11 +242,6 @@ if (!motion) {
   addEventListener('resize', tick);
   setInterval(tick, 400);
 }
-
-// the bar sits on the sheet; over the dark section it lets the dark through
-const bar = $('.bar');
-const hireEl = $('#hire');
-new IntersectionObserver(([en]) => bar.classList.toggle('on-night', en.isIntersecting), { rootMargin: '0px 0px -94% 0px' }).observe(hireEl);
 
 // nav: mark the section in view
 const navLinks = $$('.nav a');
@@ -370,7 +422,8 @@ function slotRect(i, L) {
   const col = i % COLS, row = Math.floor(i / COLS);
   return { x: L.padL + col * L.cw, y: L.padT + row * L.ch, w: L.cw, h: L.ch };
 }
-const INK = '28,27,25', GOLD = '146,108,40';
+const rootStyle = getComputedStyle(document.documentElement);
+const INK = rootStyle.getPropertyValue('--ink-rgb').trim(), GOLD = rootStyle.getPropertyValue('--gold-rgb').trim(), GROUND = rootStyle.getPropertyValue('--ground').trim();
 function drawRack() {
   const L = layout();
   const { w, h, dpr } = L;
@@ -395,10 +448,10 @@ function drawRack() {
   ctx.strokeStyle = `rgba(${GOLD},.75)`;
   ctx.lineWidth = 1 * dpr;
   ctx.strokeRect(L.padL + 0.5, L.trayY + 0.5, L.innerW - 1, L.trayH - 1);
-  ctx.font = `${9.5 * dpr}px "Martian Mono", ui-monospace, monospace`;
+  ctx.font = `${13.5 * dpr}px "Cabinet Grotesk", "Helvetica Neue", Arial, sans-serif`;
   ctx.textBaseline = 'middle';
   ctx.fillStyle = `rgba(${GOLD},1)`;
-  ctx.fillText('FOR A PERSON', L.padL + 10 * dpr, L.trayY + L.trayH / 2);
+  ctx.fillText('For a person', L.padL + 10 * dpr, L.trayY + L.trayH / 2);
   // the message, dropping or resting
   let s = sheet;
   if (drop) {
@@ -408,7 +461,7 @@ function drawRack() {
     if (u >= 1) { sheet = { x: drop.toX, y: drop.toY, w: drop.w, h: drop.h }; drop = null; }
   }
   if (s) {
-    ctx.fillStyle = '#efe8d8';
+    ctx.fillStyle = GROUND;
     ctx.fillRect(s.x, s.y, s.w, s.h);
     ctx.strokeStyle = `rgba(${INK},.95)`;
     ctx.lineWidth = 1.1 * dpr;
@@ -419,7 +472,8 @@ function drawRack() {
     const i = topIdx[0];
     const r = slotRect(i, L);
     const label = `${pretty(model.labels[i])}  ${(current[i] * 100).toFixed(1)}%`;
-    ctx.font = `${10 * dpr}px "Martian Mono", ui-monospace, monospace`;
+    ctx.font = `${11.5 * dpr}px "Martian Mono", ui-monospace, monospace`;
+    if ('fontStretch' in ctx) ctx.fontStretch = 'condensed';
     const tw = ctx.measureText(label).width;
     const cx = r.x + r.w / 2;
     const ly = L.padT - 18 * dpr;

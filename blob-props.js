@@ -1,6 +1,6 @@
 // Everything else that gets drawn, in the same pencil: threads, knots, the crew's links, the gold
 // thread, and the props of the work scenes. Pure data, no DOM or Three; a worker packs it.
-import { makeRng, noise1, smoothstep, clamp, unit, cross, surfacePoint, surfaceNormal, surfaceFrame, MACRO_DIR, scribble, decimate, limitWidth } from './blob-geometry.js';
+import { makeRng, noise1, smoothstep, clamp, unit, cross, surfacePoint, surfaceNormal, surfaceFrame, MACRO_DIR, decimate, limitWidth } from './blob-geometry.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const add = (a, b, k = 1) => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
@@ -69,48 +69,62 @@ export function knot(center, radius, r, o = {}) {
 
 // ---------- the hero's pieces ----------
 
-// Act 1: rows of numbers drift in from the right and join the body.
-export function stream(seed = 41) {
+// Act 1: a few rows of numbers, curved gently, easing into the body. Each runs left to right so its
+// digits stand upright, starts at the body and fades out at the far end, well inside the frame.
+export function stream(narrow = false, seed = 41) {
   const r = makeRng(seed);
-  const strands = [];
-  for (let i = 0; i < 15; i++) {
-    const d = unit([0.55 + r() * 0.5, -0.1 + r() * 0.85, 0.5 + r() * 0.5]);
-    const end = surfacePoint(d, 1.02);
-    const n = surfaceNormal(d);
-    const start = [3.9 + r() * 1.3, -0.5 + r() * 2.6, -0.3 + r() * 1.1];
-    const mid = [lerp(end[0], start[0], 0.55) + (r() - 0.5) * 0.5, lerp(end[1], start[1], 0.55) + (r() - 0.35) * 0.7, lerp(end[2], start[2], 0.55) + 0.25 * r()];
-    const near = add(end, n, 0.42 + r() * 0.3);
-    const wide = 0.016 + r() * 0.009;
-    strands.push(curve([start, mid, near, end], r, {
-      width: wide, tone: 0.2 + r() * 0.34, pressure: 0.8, delay: r() * 0.42, taper: 0.03, ds: 0.03, wob: 0.012, sh: 1.1 + i * 0.001,
-      widthAt: (f) => lerp(1, 0.2, smoothstep(0.62, 1, f)),
-    }));
-  }
+  const rows = narrow
+    ? [{ d: [0.56, 0.68, 0.48], far: [1.36, 1.4, 0.3], w: 0.094 }, { d: [0.74, 0.44, 0.5], far: [1.38, 1.08, 0.3], w: 0.084 }, { d: [0.86, 0.2, 0.46], far: [1.4, 0.72, 0.3], w: 0.09 }]
+    : [
+      { d: [0.58, 0.68, 0.46], far: [1.86, 1.42, 0.3], w: 0.07 },
+      { d: [0.74, 0.46, 0.48], far: [2.04, 1.02, 0.3], w: 0.064 },
+      { d: [0.84, 0.24, 0.48], far: [2.1, 0.6, 0.3], w: 0.068 },
+      { d: [0.88, 0.02, 0.48], far: [2.08, 0.16, 0.3], w: 0.062 },
+      { d: [0.84, -0.2, 0.5], far: [1.98, -0.26, 0.3], w: 0.066 },
+    ];
+  const strands = rows.map((row, i) => {
+    const end = surfacePoint(row.d, 1.02);
+    const mid = [lerp(end[0], row.far[0], 0.52), lerp(end[1], row.far[1], 0.52) + 0.15 + 0.02 * i, lerp(end[2], row.far[2], 0.52)];
+    const s = curve([end, mid, row.far], r, {
+      width: row.w, tone: 0.04 + r() * 0.1, taper: 0.002, ds: 0.016, wob: 0.0015, sh: 1.1 + i * 0.001, keepAll: true,
+      widthAt: (f) => lerp(0.42, 1, smoothstep(0, 0.42, f)),
+    });
+    const n = s.points.length;
+    s.points.forEach((q, k) => { q.p = 1 - smoothstep(0.58, 1, k / (n - 1)); });
+    s.delay = 0.05 + (i % 3) * 0.13;
+    return s;
+  });
   return { strands };
 }
 
-// Act 2: where the skill arrives. In body coordinates, on the patch the macro camera reads.
-export function macroLayout() {
+// Act 2: where the skill arrives, above the rows the macro camera reads, in body coordinates.
+export function macroLayout(narrow = false) {
   const { p, n, right, up } = surfaceFrame(MACRO_DIR);
-  const c = add(add(add(p, n, 0.1), right, 0.055), up, 0.036);
+  const c = add(add(add(p, n, 0.072), right, narrow ? 0.012 : 0.066), up, narrow ? 0.056 : 0.058);
   return { p, n, right, up, knot: c };
 }
 export function skillKnot(seed = 43) {
   const r = makeRng(seed);
-  const { n } = macroLayout();
-  return { strands: knot([0, 0, 0], 0.03, r, { count: 16, width: 0.0021, tone: 0.1, delaySpread: 0 }).map((s) => { s.delay = 0; return s; }), normal: n };
+  return { strands: knot([0, 0, 0], 0.0105, r, { count: 9, width: 0.00105, tone: 0.1, delaySpread: 0 }).map((s) => { s.delay = 0; return s; }) };
 }
-export function skillThreads(seed = 47) {
+// its threads run only across the clear part above the rows, so none crosses a sharp line of digits
+export function skillThreads(narrow = false, seed = 47) {
   const r = makeRng(seed);
-  const { p, n, right, up, knot: c } = macroLayout();
+  const { n, right, up, knot: c } = macroLayout(narrow);
   const strands = [];
-  const ends = [[0.3, 0.13], [0.27, -0.04], [0.17, -0.12], [0.02, -0.13], [-0.06, 0.08], [0.08, 0.17], [0.21, 0.2]];
+  const ends = narrow ? [[-0.05, 0.1], [0.07, 0.11], [-0.03, 0.045], [0.05, 0.05]] : [[0.17, 0.056], [0.14, 0.135], [-0.005, 0.13], [-0.045, 0.058]];
   ends.forEach(([ex, ey], i) => {
     const d = unit(add(add(unit(MACRO_DIR), right, ex), up, ey));
     const end = surfacePoint(d, 1.03);
-    const mid = add(add(c, sub(end, c), 0.55), n, 0.02 + r() * 0.03);
-    const first = add(c, sub(end, c), 0.12);
-    strands.push(curve([c, first, mid, end], r, { width: 0.0064 + r() * 0.0026, tone: 0.04 + r() * 0.14, delay: i * 0.05, taper: 0.06, ds: 0.004, wob: 0.0016, sh: 1.07 + i * 0.001, keepAll: true }));
+    const mid = add(add(c, sub(end, c), 0.55), n, 0.012);
+    // always written left to right on the screen, so its digits stand upright
+    const path = [c, add(c, sub(end, c), 0.14), mid, end];
+    const leftward = ex < (narrow ? 0.012 : 0.066);
+    const th = curve(leftward ? path.reverse() : path, r, { width: 0.0052 + r() * 0.0016, tone: 0.05 + r() * 0.1, delay: i * 0.08, taper: 0.001, ds: 0.004, wob: 0.0012, sh: 1.07 + i * 0.001, keepAll: true });
+    // it sinks into the body at its far end and is gone, no blunt tip
+    const m = th.points.length;
+    th.points.forEach((q, k) => { const f = k / (m - 1); q.p = leftward ? smoothstep(0, 0.34, f) : 1 - smoothstep(0.66, 1, f); });
+    strands.push(th);
   });
   return { strands };
 }
@@ -148,64 +162,52 @@ export function packet(seed = 61) {
   return { strands: knot([0, 0, 0], 0.03, r, { count: 7, width: 0.0028, tone: 0.05, delaySpread: 0 }) };
 }
 
-// Act 4: the gold thread. It winds the body and leads off toward the viewer. Its only meaning is the
-// human's control. leadF says where along it the lead starts; ends says where the lead runs.
+// Act 4: a simple harness. Two straps around the body, one above the eyes and one below, joined at the
+// sides, then one thread leaving toward the viewer. Gold means the human's control and nothing else.
+// A strap is a tilted plane cut through the body, so from the front it is a curved ellipse hugging the
+// surface; a depth mask drawn just before it sends the far half behind the body.
+function strapPoint(th, tilt, h) {
+  const N = [0, Math.cos(tilt), Math.sin(tilt)], e2 = [0, -Math.sin(tilt), Math.cos(tilt)];
+  const k = Math.sqrt(Math.max(0.02, 1 - h * h));
+  return [Math.sin(th) * k + N[0] * h, e2[1] * Math.cos(th) * k + N[1] * h, e2[2] * Math.cos(th) * k + N[2] * h];
+}
 export function goldThread(seed = 67) {
   const r = makeRng(seed);
+  const SH = 1.014;
+  const UP = { tilt: 0.42, h: 0.5 }, LO = { tilt: 0.24, h: -0.3 };
   const pts = [];
-  const turns = 2.75;
-  const n = 170;
-  // start at the back, wind down around the body, and leave from the lower left of the front
-  const avoid = (x, y) => { // lift the path off the eyes
-    const dl = Math.hypot((x + 0.415) / 0.2, (y + 0.2) / 0.17), dr = Math.hypot((x - 0.415) / 0.2, (y + 0.2) / 0.17);
-    return Math.min(dl, dr);
-  };
-  for (let i = 0; i <= n; i++) {
-    const f = i / n;
-    const th = Math.PI * 0.5 + f * turns * Math.PI * 2;
-    const lat = lerp(0.72, -0.5, f) + 0.17 * Math.sin(th * 1.0 + 0.6);
-    let d = [Math.sin(th) * Math.cos(lat), Math.sin(lat), Math.cos(th) * Math.cos(lat)];
-    let p = surfacePoint(d, 1.055);
-    const m = avoid(p[0], p[1]);
-    if (m < 1 && p[2] > 0) { d = unit([d[0], d[1] + (p[1] > -0.2 ? 1 : -1) * (1 - m) * 0.2, d[2]]); p = surfacePoint(d, 1.055); }
-    pts.push(p);
-  }
+  const push = (d) => pts.push(surfacePoint(d, SH));
+  // one continuous line: once around the upper strap, down the left side, once around the lower
+  const leftTh = -1.26, n = 84;
+  for (let i = 0; i <= n; i++) push(strapPoint(leftTh - (i / n) * Math.PI * 2, UP.tilt, UP.h));
+  const a = strapPoint(leftTh, UP.tilt, UP.h), b = strapPoint(leftTh, LO.tilt, LO.h);
+  for (let i = 1; i < 12; i++) { const f = i / 12; push([lerp(a[0], b[0], f), lerp(a[1], b[1], f), lerp(a[2], b[2], f)]); }
+  const endTh = -0.18;
+  const span = Math.PI * 2 + (leftTh - endTh);
+  for (let i = 0; i <= n; i++) push(strapPoint(leftTh - (i / n) * span, LO.tilt, LO.h));
   const last = pts[pts.length - 1];
-  const leadA = last;
-  const leadB = [-0.86, -1.32, 6.6];
-  const before = pts[pts.length - 2], lt = unit(sub(last, before));
-  const off = add(last, lt, 0.1);
-  const mid1 = [lerp(last[0], leadB[0], 0.28) + 0.1, lerp(last[1], leadB[1], 0.28) - 0.1, lerp(last[2], leadB[2], 0.28)];
-  const mid2 = [lerp(last[0], leadB[0], 0.62) + 0.06, lerp(last[1], leadB[1], 0.62) + 0.04, lerp(last[2], leadB[2], 0.62)];
-  const all = [...pts, off, mid1, mid2, leadB];
-  const s = curve(all, r, { width: 0.0074, gold: true, tone: 0.5, taper: 0.004, ds: 0.016, wob: 0.0022, sh: 1.2, keepAll: true });
-  s.points.forEach((q) => { q.p = 1; });
+  const dir = unit(sub(last, pts[pts.length - 2]));
+  const leadB = [-0.9, -1.36, 6.7];
+  const nrm = unit(last);
+  const off1 = add(add(last, dir, 0.16), nrm, 0.03);
+  const mid1 = add(add(add(off1, dir, 0.3), nrm, 0.14), [0, -0.1, 0.1]);
+  const mid2 = [lerp(mid1[0], leadB[0], 0.3), lerp(mid1[1], leadB[1], 0.3), lerp(mid1[2], leadB[2], 0.3)];
+  const main = curve([...pts, off1, mid1, mid2, leadB], r, { width: 0.0074, gold: true, tone: 1, taper: 0.002, ds: 0.016, wob: 0.0012, sh: 1.2, keepAll: true });
+  main.points.forEach((q) => { q.p = 1; });
   // where the lead starts, as a fraction of arc length
   let total = 0, at = 0;
-  for (let i = 1; i < s.points.length; i++) {
-    const a = s.points[i], b = s.points[i - 1];
-    total += Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-    if (at === 0 && Math.hypot(a.x - last[0], a.y - last[1], a.z - last[2]) < 0.02) at = total;
+  for (let i = 1; i < main.points.length; i++) {
+    const p = main.points[i], q = main.points[i - 1];
+    total += Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
+    if (Math.hypot(p.x - last[0], p.y - last[1], p.z - last[2]) < 0.02) at = total;
   }
-  return { strands: [s], leadF: at / total, leadA, leadB };
-}
-
-// The patch of pencil it sits on: a rubbed shadow, hatched by the same hand, on a sheet tilted to us.
-export function groundShadow(seed = 71, { cx = 0.12, cy = -0.885, w = 1.02, h = 0.085, tone = 0.42, count = 64 } = {}) {
-  const r = makeRng(seed);
-  const strands = [];
-  for (let i = 0; i < count; i++) {
-    const a = Math.sqrt(r());
-    const th = r() * Math.PI * 2;
-    const y = cy + Math.sin(th) * a * h;
-    const halfSpan = w * Math.sqrt(Math.max(0.02, 1 - ((y - cy) / h) ** 2)) * (0.25 + r() * 0.32);
-    const x0 = cx + Math.cos(th) * a * w * 0.55;
-    const pressure = 0.28 + 0.5 * (1 - a) * (1 - a);
-    strands.push(curve([[x0 - halfSpan, y + (r() - 0.5) * 0.01, 0.2], [x0, y + (r() - 0.5) * 0.015, 0.2], [x0 + halfSpan, y + (r() - 0.5) * 0.01, 0.2]], r, {
-      width: 0.0024 + r() * 0.002, tone: tone + r() * 0.2, taper: 0.34, ds: 0.03, wob: 0.003, sh: 0.9 + i * 0.0002, pressure: pressure * 0.8,
-    }));
-  }
-  return { strands };
+  // the matching strap on the right side
+  const ra = strapPoint(-leftTh, UP.tilt, UP.h), rb = strapPoint(-leftTh, LO.tilt, LO.h);
+  const side = [];
+  for (let i = 0; i <= 12; i++) { const f = i / 12; side.push(surfacePoint([lerp(ra[0], rb[0], f), lerp(ra[1], rb[1], f), lerp(ra[2], rb[2], f)], SH)); }
+  const right = curve(side, r, { width: 0.0074, gold: true, tone: 0.5, taper: 0.002, ds: 0.016, wob: 0.0012, sh: 1.2, keepAll: true, delay: 0.56 });
+  right.points.forEach((q) => { q.p = 1; });
+  return { strands: [main, right], leadF: at / total, leadA: last, leadB };
 }
 
 // A plain sealed note for the thread to carry.
@@ -308,7 +310,7 @@ export function castShadow(x, y, z, w, r, o = {}) {
   const out = [];
   const h = o.h ?? 0.05;
   for (let i = 0; i < (o.count ?? Math.round(w * 26)); i++) {
-    const yy = y + (r() - 0.5) * h, span = w * (0.2 + r() * 0.34), x0 = x + (r() - 0.5) * w * 0.55;
+    const yy = y + (r() - 0.5) * h, span = w * (0.16 + r() * 0.2), x0 = x + (r() - 0.5) * w * 0.4;
     out.push(curve([[x0 - span, yy, z], [x0, yy + (r() - 0.5) * 0.006, z], [x0 + span, yy, z]], r, { width: 0.0048 + r() * 0.003, tone: 0.34 + r() * 0.2, taper: 0.34, ds: 0.05, wob: 0.002, sh: 1.0, pressure: 0.4 + r() * 0.3 }));
   }
   return out;
@@ -321,4 +323,4 @@ export function sag(a, b, r, o = {}) {
 }
 
 // Anything the worker can be asked for, by name.
-export const RECIPES = { stream, skillKnot, skillThreads, crewThreads, packet, goldThread, groundShadow, noteProp, sendThread };
+export const RECIPES = { stream, skillKnot, skillThreads, crewThreads, packet, goldThread, noteProp, sendThread };

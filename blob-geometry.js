@@ -1,6 +1,6 @@
-// The blob's geometry: seeded pencil strands over a soft gumdrop surface, and the pieces that join it.
-// Isomorphic on purpose (no DOM, no Three): a worker packs it for the GPU, and a Node script exports
-// the same data for anyone working outside the browser, so everything drawn is one object.
+// The blob's geometry: seeded pencil-scribble strands over a soft gumdrop surface, round and nearly
+// symmetric. Isomorphic on purpose (no DOM, no Three): a worker packs it for the GPU, and a Node script
+// exports the same data for use elsewhere, so stills and the live model are one object.
 
 const TAU = Math.PI * 2;
 export const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
@@ -8,7 +8,6 @@ export const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1
 export const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 export const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 export const unit = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
-const add3 = (a, b, k = 1) => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
 
 export function makeRng(seed) {
   let a = seed >>> 0;
@@ -52,18 +51,17 @@ function noise3(x, y, z) {
   );
 }
 
-// The body. Star-shaped around the origin: radius along a unit direction. A gumdrop: a rounded top,
-// widest in the lower third, a soft flattened base, leaning a little, with a few slow lumps.
+// The soft body. Star-shaped around the origin: radius along a unit direction.
+// Wider than tall, widest in the lower third, flattened underneath, a little lumpy, like a gumdrop.
 export function shellRadius(x, y, z) {
   const h = Math.hypot(x, z);
-  const low = smoothstep(0.55, -0.55, y);
-  const a = 0.9 + 0.22 * low;
-  const b = y > 0 ? 1.03 : 0.76;
-  const p = 2 + 0.34 * low;
+  const low = smoothstep(0.35, -0.7, y);
+  const a = 1.02 * (1 + 0.1 * low);
+  const b = y > 0 ? 0.98 : 0.78;
+  const p = 2 + 0.8 * low;
   const base = Math.pow(Math.pow(h / a, p) + Math.pow(Math.abs(y) / b, p), -1 / p);
-  const lean = 1 - 0.075 * x * y + 0.03 * z * low;
-  const lump = noise3(x * 1.45 + 11.3, y * 1.45 + 4.7, z * 1.45 + 8.1) * 0.8 + noise3(x * 3.1 + 2.1, y * 3.1 + 9.9, z * 3.1 + 1.2) * 0.2;
-  return base * lean * (1 + 0.05 * lump);
+  const lump = noise3(x * 1.6 + 11.3, y * 1.6 + 4.7, z * 1.6 + 8.1) * 0.75 + noise3(x * 3.3 + 2.1, y * 3.3 + 9.9, z * 3.3 + 1.2) * 0.25;
+  return base * (1 + 0.035 * lump);
 }
 
 export function surfacePoint(dir, shell = 1) {
@@ -76,8 +74,8 @@ export function surfaceNormal(dir) {
   const t = unit(Math.abs(d[1]) < 0.9 ? cross(d, [0, 1, 0]) : cross(d, [1, 0, 0]));
   const b = cross(d, t);
   const P = (v) => surfacePoint(v);
-  const p1 = P(add3(d, t, e)), p0 = P(add3(d, t, -e));
-  const q1 = P(add3(d, b, e)), q0 = P(add3(d, b, -e));
+  const p1 = P([d[0] + t[0] * e, d[1] + t[1] * e, d[2] + t[2] * e]), p0 = P([d[0] - t[0] * e, d[1] - t[1] * e, d[2] - t[2] * e]);
+  const q1 = P([d[0] + b[0] * e, d[1] + b[1] * e, d[2] + b[2] * e]), q0 = P([d[0] - b[0] * e, d[1] - b[1] * e, d[2] - b[2] * e]);
   const n = unit(cross([p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]], [q1[0] - q0[0], q1[1] - q0[1], q1[2] - q0[2]]));
   return dot(n, d) < 0 ? [-n[0], -n[1], -n[2]] : n;
 }
@@ -91,7 +89,7 @@ function tangentAt(c, r) {
   return unit([d[0] - c[0] * k, d[1] - c[1] * k, d[2] - c[2] * k]);
 }
 // the hand's angle changes slowly over the form: neighbouring strokes share a direction, as in a drawing
-const handAngle = (d) => noise3(d[0] * 0.95 + 21, d[1] * 0.95 + 5, d[2] * 0.95 + 13) * Math.PI * 1.25 + 0.7;
+const handAngle = (d) => noise3(d[0] * 1.05 + 21, d[1] * 1.05 + 5, d[2] * 1.05 + 13) * Math.PI * 1.35;
 
 // A scribble: an ellipse the hand keeps circling while its centre wanders. The ellipse opens and
 // closes, turns, sometimes collapses to a back-and-forth hatch, and now and then the hand reverses.
@@ -103,7 +101,7 @@ export function scribble(r, o) {
   let phi = r() * TAU, dir = r() < 0.5 ? 1 : -1, omega = dir;
   let nextFlip = o.flip > 0 ? o.flip * (0.5 + r()) : Infinity;
   const ref = o.axis || [0.31, 0.92, 0.2];
-  const psi0 = o.psi ?? handAngle(c) + (r() - 0.5) * (o.spread ?? 0.7);
+  const psi0 = o.psi ?? handAngle(c) + (r() - 0.5) * 0.7;
   if (o.ratio < 0.15) {
     // a hatch steps sideways across its own sweep
     const kr0 = dot(ref, c), e0 = unit([ref[0] - c[0] * kr0, ref[1] - c[1] * kr0, ref[2] - c[2] * kr0]), f0 = cross(c, e0);
@@ -111,12 +109,11 @@ export function scribble(r, o) {
     v = unit([-e0[0] * sp0 + f0[0] * cp0, -e0[1] * sp0 + f0[1] * cp0, -e0[2] * sp0 + f0[2] * cp0]);
   }
   const ds = o.ds;
-  const trem = o.tremble ?? 1;
   let s = 0;
   while (s < o.length) {
     const A = o.A * (0.72 + 0.5 * nA(s / (o.A * 7) + 3));
-    const B = A * clamp(o.ratio * (0.75 + 0.7 * nR(s / (o.A * 9) + 7)), 0.02, 1.1);
-    const psi = psi0 + (o.ratio < 0.15 ? 0.22 : 0.9) * nPsi(s / (o.A * 16) + 11);
+    const B = A * clamp(o.ratio * (0.75 + 0.7 * nR(s / (o.A * 9) + 7)), 0.025, 1.1);
+    const psi = psi0 + (o.ratio < 0.15 ? 0.25 : 0.9) * nPsi(s / (o.A * 16) + 11);
     // the sweep's direction is held in the world, not the wander: that is what keeps a patch coherent
     const kr = dot(ref, c);
     const e1 = unit([ref[0] - c[0] * kr, ref[1] - c[1] * kr, ref[2] - c[2] * kr]), e2 = cross(c, e1);
@@ -125,7 +122,7 @@ export function scribble(r, o) {
     const a2 = [-e1[0] * sp + e2[0] * cp, -e1[1] * sp + e2[1] * cp, -e1[2] * sp + e2[2] * cp];
     const ca = Math.cos(phi) * A, cb = Math.sin(phi) * B;
     let off = [a1[0] * ca + a2[0] * cb, a1[1] * ca + a2[1] * cb, a1[2] * ca + a2[2] * cb];
-    const tremA = 0.0022 * trem, tremB = 0.0008 * trem;
+    const tremA = 0.0028, tremB = 0.0009;
     off = [
       off[0] + t1(s * 13) * tremA + t3(s * 46) * tremB,
       off[1] + t2(s * 13) * tremA + t4(s * 46) * tremB,
@@ -142,12 +139,13 @@ export function scribble(r, o) {
     const press = clamp(0.62 + 0.62 * nW(s * 1.5 + 9), 0.25, 1.25);
     const lift = Math.min(1, smoothstep(0, o.taper, s) + 0.08) * Math.min(1, smoothstep(0, o.taper, o.length - s) + 0.08);
     pts.push({ x: d[0] * rad, y: d[1] * rad, z: d[2] * rad, w: o.width * press * lift, p: clamp(press * lift, 0, 1), sh: shell });
+    // advance
     if (s > nextFlip) { dir = -dir; nextFlip = s + o.flip * (0.5 + r()); }
     omega += (dir - omega) * clamp(ds * 9, 0, 1);
     const rMean = Math.sqrt((A * A + B * B) / 2);
     phi += omega * (ds / rMean) * (1 + 0.28 * nV(s * 2.2));
     const k = ds * o.drift;
-    c = unit(add3(c, v, k));
+    c = unit([c[0] + v[0] * k, c[1] + v[1] * k, c[2] + v[2] * k]);
     const turn = nD(s * 0.9 + 3) * ds * 1.5;
     const e = cross(c, v), kv = dot(v, c);
     v = unit([v[0] - c[0] * kv + e[0] * turn, v[1] - c[1] * kv + e[1] * turn, v[2] - c[2] * kv + e[2] * turn]);
@@ -165,13 +163,15 @@ function flyaway(r, o) {
   v = unit([v[0] - c[0] * k0, v[1] - c[1] * k0, v[2] - c[2] * k0]);
   const curl = (r() < 0.5 ? -1 : 1) * (o.curl ?? 1.6 + r() * 2.5);
   const n = Math.round(o.length / o.ds);
-  let p = surfacePoint(c, o.shell);
+  const base = surfacePoint(c, o.shell);
+  let p = base.slice();
   let t = v;
   const up = c;
   const t1 = noise1(r);
   for (let i = 0; i <= n; i++) {
     const f = i / n;
     pts.push({ x: p[0], y: p[1], z: p[2], w: o.width * (0.25 + 0.75 * Math.sin(Math.min(f * 1.15, 1) * Math.PI) ** 0.6) * (1 - f * f * 0.5), p: 1 - f * 0.55, sh: o.shell + 0.02 + f * 0.06 });
+    // bend the heading: curl around the surface normal, and lift off it
     const a = curl * o.ds * (0.55 + 1.2 * f) + t1(f * 3) * o.ds * 2;
     const ca = Math.cos(a), sa = Math.sin(a), ax = up;
     const k = dot(ax, t), cr = cross(ax, t);
@@ -208,138 +208,141 @@ export function limitWidth(pts) {
   for (let i = 1; i < n - 1; i++) {
     const a = pts[i - 1], b = pts[i], c = pts[i + 1];
     const u = [b.x - a.x, b.y - a.y, b.z - a.z], v = [c.x - b.x, c.y - b.y, c.z - b.z];
-    const lu = Math.hypot(u[0], u[1], u[2]) || 1e-6, lv = Math.hypot(v[0], v[1], v[2]) || 1e-6;
+    const lu = Math.hypot(...u) || 1e-6, lv = Math.hypot(...v) || 1e-6;
     const ang = Math.acos(clamp((u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (lu * lv), -1, 1));
     const R = ((lu + lv) * 0.5) / Math.max(ang, 1e-3);
-    lim[i] = clamp((R * 1.5) / Math.max(b.w, 1e-4), 0.14, 1);
+    lim[i] = clamp((R * 1.5) / Math.max(b.w, 1e-4), 0.22, 1);
   }
   for (let pass = 0; pass < 3; pass++) {
     for (let i = 1; i < n - 1; i++) lim[i] = Math.min(lim[i], (lim[i - 1] + lim[i] * 2 + lim[i + 1]) / 4 + 0.02);
   }
-  for (let i = 0; i < n; i++) pts[i].w *= lim[i];
+  for (let i = 0; i < n; i++) { pts[i].w *= lim[i]; }
   return pts;
 }
-
-export const DEFAULTS = {
-  seed: 1187,
-  density: 1,
-  ds: 0.011,
-  mass: { length: 300, count: 90 },
-  hatchDark: { length: 1900, count: 1300 },
-  hatchLight: { length: 1000, count: 760 },
-  loops: { length: 340, count: 340 },
-  gesture: { length: 150, count: 34 },
-  big: { length: 42, count: 7 },
-  white: { length: 36, count: 34 },
-  flyaways: 22,
-  crown: 5,
-};
 
 // Where the macro camera looks: high on the lit side of the body, clear of the eyes.
 export const MACRO_DIR = unit([-0.22, 0.42, 0.88]);
 
-// Strand tones: 0 near-black graphite, 0.5 a light pressure, above 0.72 a white pencil.
+// Where the eyes sit: tall ovals, set a little low and wide apart.
+export const EYE = { x: 0.38, y: -0.13, rx: 0.088, ry: 0.12, tilt: 0.05 };
+
+export const DEFAULTS = {
+  seed: 1187,
+  density: 1,
+  ds: 0.011,            // walk step before decimation
+  mass: { length: 640, count: 170 },
+  hatch: { length: 210, count: 75 },
+  under: { length: 150, count: 60 },
+  mid: { length: 760, count: 360 },
+  top: { length: 480, count: 320 },
+  gold: { count: 5 },
+  flyaways: 46,
+  crown: 7,
+};
+
+// Strand tones: 0 near-black, 0.2 charcoal, 0.5 mid, 1 bone.
 export function generateBlob(options = {}) {
   const cfg = { ...DEFAULTS, ...options };
-  const D = cfg.density;
   const r = makeRng(cfg.seed);
   const strands = [];
   const add = (kind, pts, tone, gold = 0) => {
-    const k = limitWidth(decimate(pts, kind === 'fly' ? 0.09 : 0.1, 0.07));
+    const k = limitWidth(decimate(pts, kind === 'fly' ? 0.09 : 0.095, 0.07));
     if (cfg.widthK) for (const q of k) q.w *= cfg.widthK;
     strands.push({ id: strands.length, kind, tone, gold, row: 0, u0: 0, points: k });
   };
   const logRange = (a, b) => a * Math.pow(b / a, r());
-  // Marks go where the form turns from the light: the lower right. Almost all of them on the side
-  // anyone sees, because the camera stays within 30 degrees of the face.
-  const shadeAt = (d) => 0.5 - 0.5 * (d[0] * -0.74 + d[1] * 0.56 + d[2] * 0.34);
+  // shadow side of the form takes more pencil: lower right and behind
   const centerFor = (bias) => {
-    for (let i = 0; i < 24; i++) {
+    for (let i = 0; i < 12; i++) {
       const d = randomDir(r);
-      if (d[2] < -0.25 && r() < 0.86) continue;
-      if (r() < 1 - bias + bias * Math.pow(shadeAt(d), 1.5) * 2.2) return d;
+      const shade = 0.5 - 0.5 * (d[0] * -0.55 + d[1] * 0.72 + d[2] * 0.42);
+      if (r() < 1 - bias + bias * shade * 1.6) return d;
     }
     return randomDir(r);
   };
-  const lay = (spec, make) => {
-    const count = Math.max(1, Math.round(spec.count * D)), each = (spec.length * D) / count;
-    for (let i = 0; i < count; i++) make(each * (0.35 + r() * 1.3));
+  const lay = (length, count, make) => {
+    const n = Math.max(1, Math.round(count * cfg.density)), each = (length * cfg.density) / n;
+    for (let i = 0; i < n; i++) make(each * (0.3 + r() * 1.4));
   };
 
-  // side of the pencil: wide grainy tone, only in the shadow
-  lay(cfg.mass, (len) => {
+  // the mass: wide soft strokes of charcoal, what gives the body its value before any line is drawn
+  lay(cfg.mass.length, cfg.mass.count, (len) => {
+    const zig = r() < 0.55;
+    const pick = r();
     add('mass', scribble(r, {
-      center: centerFor(0.95), length: len, ds: cfg.ds * 1.6,
-      A: logRange(0.16, 0.42), ratio: 0.05 + r() * 0.06, drift: 0.05 + r() * 0.06, flip: 0, spread: 0.5,
-      shell: 0.94 + r() * 0.025, shellVar: 0.006, width: 0.016 + r() * r() * 0.03, taper: 0.28,
-    }), 0.22 + r() * 0.3);
+      center: centerFor(0.15), length: len, ds: cfg.ds * 1.5,
+      A: zig ? logRange(0.26, 0.72) : logRange(0.16, 0.6), ratio: zig ? 0.05 + r() * 0.08 : 0.4 + r() * 0.5,
+      drift: zig ? 0.05 + r() * 0.07 : 0.08 + r() * 0.1, flip: 0,
+      shell: 0.932 + r() * 0.03, shellVar: 0.006, width: 0.016 + r() * r() * 0.03, taper: 0.3,
+    }), pick < 0.22 ? 0.08 + r() * 0.1 : pick < 0.72 ? 0.28 + r() * 0.2 : 0.5 + r() * 0.18);
   });
-  // the fine fast hatching that does most of the work, thick with pencil in the shadow
-  lay(cfg.hatchDark, (len) => {
-    const cross2 = r() < 0.32;
-    const c = centerFor(0.86);
+  // dark contour marks directly over the mass
+  lay(cfg.under.length, cfg.under.count, (len) => {
+    const zig = r() < 0.3;
+    add('under', scribble(r, {
+      center: centerFor(0.42), length: len, ds: cfg.ds,
+      A: zig ? logRange(0.28, 0.7) : logRange(0.1, 0.42), ratio: zig ? 0.04 + r() * 0.05 : 0.42 + r() * 0.55,
+      drift: zig ? 0.03 + r() * 0.04 : 0.07 + r() * 0.1, flip: r() < 0.35 ? 6 + r() * 10 : 0,
+      shell: 0.962 + r() * 0.012, shellVar: 0.005, width: 0.008 + r() * 0.0065, taper: 0.14,
+    }), 0.02 + r() * 0.08);
+  });
+  // hatching on the shadow side, all one hand's angle: the marks that say a person shaded this
+  lay(cfg.hatch.length, cfg.hatch.count, (len) => {
     add('hatch', scribble(r, {
-      center: c, length: len, ds: cfg.ds,
-      A: logRange(0.07, 0.27), ratio: 0.025 + r() * 0.03, drift: 0.016 + r() * 0.024, flip: 0, spread: 0.4,
-      psi: cross2 ? handAngle(c) + 1.15 + (r() - 0.5) * 0.4 : undefined,
-      shell: 0.97 + r() * 0.03, shellVar: 0.004, width: 0.0024 + r() * 0.002, taper: 0.06, tremble: 0.7,
-    }), 0.03 + r() * r() * 0.3);
+      center: centerFor(0.95), length: len, ds: cfg.ds, axis: [0.75, 0.62, 0.2], psi: (r() - 0.5) * 0.3,
+      A: logRange(0.2, 0.46), ratio: 0.03 + r() * 0.025, drift: 0.018 + r() * 0.018, flip: 0,
+      shell: 0.978 + r() * 0.014, shellVar: 0.004, width: 0.0042 + r() * 0.0032, taper: 0.1,
+    }), 0.03 + r() * 0.08);
   });
-  // lighter hatching across the body, so the lit side still has a surface
-  lay(cfg.hatchLight, (len) => {
-    add('hatch', scribble(r, {
-      center: centerFor(0.2), length: len, ds: cfg.ds,
-      A: logRange(0.07, 0.24), ratio: 0.025 + r() * 0.03, drift: 0.02 + r() * 0.026, flip: 0, spread: 0.5,
-      shell: 0.975 + r() * 0.025, shellVar: 0.004, width: 0.0022 + r() * 0.0012, taper: 0.06, tremble: 0.7,
-    }), 0.26 + r() * 0.3);
+  // the middle tones, and most of the visible scribble
+  lay(cfg.mid.length, cfg.mid.count, (len) => {
+    const zig = r() < 0.2;
+    const big = r() < 0.3;
+    const pick = r();
+    add('mid', scribble(r, {
+      center: centerFor(0.18), length: len, ds: cfg.ds,
+      A: big ? logRange(0.5, 1.05) : zig ? logRange(0.26, 0.62) : logRange(0.07, 0.34), ratio: zig ? 0.035 + r() * 0.05 : big ? 0.28 + r() * 0.5 : 0.3 + r() * 0.65,
+      drift: zig ? 0.025 + r() * 0.04 : 0.06 + r() * 0.1, flip: r() < 0.3 ? 5 + r() * 9 : 0,
+      shell: 0.972 + r() * 0.024, shellVar: 0.008, width: 0.0052 + r() * r() * 0.0065, taper: 0.16,
+    }), pick < 0.38 ? 0.03 + r() * 0.09 : 0.3 + r() * 0.34);
   });
-  // small loops: the scribble's own texture, small enough to read as tone from far away
-  lay(cfg.loops, (len) => {
-    add('loop', scribble(r, {
-      center: centerFor(0.45), length: len, ds: cfg.ds * 0.8,
-      A: logRange(0.016, 0.07), ratio: 0.45 + r() * 0.5, drift: 0.12 + r() * 0.3, flip: r() < 0.3 ? 2 + r() * 3 : 0,
-      shell: 0.985 + r() * 0.025, shellVar: 0.004, width: 0.0024 + r() * 0.0018, taper: 0.06,
-    }), r() < 0.7 ? 0.04 + r() * 0.2 : 0.3 + r() * 0.25);
+  // the top: sparse, confident, the lightest and the darkest marks of the drawing
+  lay(cfg.top.length, cfg.top.count, (len) => {
+    const zig = r() < 0.2;
+    const big = r() < 0.22;
+    const pick = r();
+    const heavy = r() < 0.09;
+    const tone = pick < 0.3 ? 0.03 + r() * 0.07 : pick < 0.6 ? 0.42 + r() * 0.24 : 0.74 + r() * 0.26;
+    add('top', scribble(r, {
+      center: centerFor(-0.25), length: len, ds: cfg.ds,
+      A: big ? logRange(0.4, 0.85) : zig ? logRange(0.24, 0.52) : logRange(0.06, 0.26), ratio: zig ? 0.04 + r() * 0.05 : big ? 0.5 + r() * 0.45 : 0.35 + r() * 0.65,
+      drift: zig ? 0.025 + r() * 0.035 : 0.06 + r() * 0.12, flip: r() < 0.25 ? 4 + r() * 8 : 0,
+      shell: 0.998 + r() * 0.03, shellVar: 0.008, over: big ? 0.05 + r() * 0.05 : 0.02, width: heavy ? 0.0105 + r() * 0.004 : 0.0044 + r() * 0.0044, taper: 0.18,
+    }), tone);
   });
-  // a few larger gestures that hold it all together
-  lay(cfg.gesture, (len) => {
-    add('gesture', scribble(r, {
-      center: centerFor(0.15), length: len, ds: cfg.ds,
-      A: logRange(0.2, 0.46), ratio: 0.22 + r() * 0.4, drift: 0.05 + r() * 0.09, flip: 0,
-      shell: 1.0 + r() * 0.02, shellVar: 0.006, over: 0.008, width: 0.0034 + r() * 0.0024, taper: 0.22,
-    }), 0.04 + r() * 0.14);
-  });
-  lay(cfg.big, (len) => {
-    add('big', scribble(r, {
-      center: centerFor(0), length: len, ds: cfg.ds,
-      A: logRange(0.55, 0.95), ratio: 0.45 + r() * 0.35, drift: 0.05 + r() * 0.08, flip: 0,
-      shell: 1.015 + r() * 0.012, shellVar: 0.006, over: 0.022, width: 0.0034 + r() * 0.0016, taper: 0.4,
-    }), 0.1 + r() * 0.14);
-  });
-  // white pencil, sparingly, on the lit side
-  lay(cfg.white, (len) => {
-    add('white', scribble(r, {
-      center: centerFor(-0.5), length: len, ds: cfg.ds,
-      A: logRange(0.05, 0.2), ratio: 0.04 + r() * 0.3, drift: 0.04 + r() * 0.06, flip: 0,
-      shell: 1.03 + r() * 0.008, shellVar: 0.002, width: 0.0026 + r() * 0.0012, taper: 0.1,
-    }), 0.8 + r() * 0.2);
-  });
+  // Gold on the body means the human's thread and nothing else. These are drawn and dropped, so what
+  // comes after them in the generator stays exactly where it was.
+  for (let i = 0; i < cfg.gold.count; i++) {
+    scribble(r, {
+      center: centerFor(-0.4), length: 0.9 + r() * 1.7, ds: cfg.ds,
+      A: logRange(0.16, 0.5), ratio: 0.5 + r() * 0.45, drift: 0.09 + r() * 0.09, flip: 0,
+      shell: 1.012 + r() * 0.02, shellVar: 0.006, width: 0.005 + r() * 0.0022, taper: 0.25,
+    });
+  }
   // loose hairs at the silhouette, none of them long
-  const fly = Math.round(cfg.flyaways * Math.max(D, 0.25));
-  for (let i = 0; i < fly; i++) {
+  for (let i = 0; i < cfg.flyaways; i++) {
     const d = randomDir(r);
-    add('fly', flyaway(r, { center: d, length: 0.06 + r() * r() * 0.2, ds: 0.006, shell: 0.985 + r() * 0.03, lift: 0.2 + r() * 0.36, width: 0.0028 + r() * 0.0016 }), 0.08 + r() * 0.34);
+    add('fly', flyaway(r, { center: d, length: 0.07 + r() * r() * 0.3, ds: 0.006, shell: 0.985 + r() * 0.03, lift: 0.22 + r() * 0.42, width: 0.0042 + r() * 0.003 }), r() < 0.5 ? 0.06 + r() * 0.16 : 0.42 + r() * 0.4);
   }
   // a small cowlick at the crown
-  const crown = Math.round(cfg.crown * Math.max(D, 0.4));
-  for (let i = 0; i < crown; i++) {
-    const a = r() * TAU, rr = 0.03 + r() * 0.11;
-    const d = unit([Math.cos(a) * rr - 0.08, 1, Math.sin(a) * rr * 0.6 + 0.1]);
-    add('fly', flyaway(r, { center: d, dir: [(r() - 0.6), 0, (r() - 0.5) * 0.5], length: 0.14 + r() * 0.16, ds: 0.006, shell: 0.99, lift: 0.72 + r() * 0.5, curl: (r() < 0.75 ? -1 : 1) * (3 + r() * 4), width: 0.0032 + r() * 0.0016 }), 0.06 + r() * 0.2);
+  for (let i = 0; i < cfg.crown; i++) {
+    const a = r() * TAU, rr = 0.03 + r() * 0.13;
+    const d = unit([Math.cos(a) * rr - 0.06, 1, Math.sin(a) * rr * 0.6 + 0.08]);
+    add('fly', flyaway(r, { center: d, dir: [(r() - 0.6) * 1, 0, (r() - 0.5) * 0.5], length: 0.18 + r() * 0.2, ds: 0.006, shell: 0.99, lift: 0.75 + r() * 0.5, curl: (r() < 0.75 ? -1 : 1) * (3 + r() * 4), width: 0.0052 + r() * 0.0028 }), i < 4 ? 0.06 + r() * 0.08 : 0.62 + r() * 0.3);
   }
   // the two lines the macro camera reads, placed by hand: they run left to right above everything
   if (cfg.readers !== false) for (const s of readerStrands(r)) strands.push({ id: strands.length, ...s });
-  return { seed: cfg.seed, density: D, strands };
+  return { seed: cfg.seed, density: cfg.density, strands };
 }
 
 // A local frame on the surface at a direction: normal, a tangent running to the right on screen, up.
@@ -473,7 +476,7 @@ export function packStrands(blob, { atlasAspect = 40, rows = 40, seed = 91 } = {
 }
 
 // The depth-only body inside the strands: a UV sphere pushed out to the shell.
-export function coreMesh(shell = 0.93, rings = 48, segs = 72) {
+export function coreMesh(shell = 0.915, rings = 48, segs = 72) {
   const position = [], index = [];
   for (let i = 0; i <= rings; i++) {
     const th = (i / rings) * Math.PI;

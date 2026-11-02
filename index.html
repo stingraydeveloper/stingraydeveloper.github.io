@@ -6,8 +6,17 @@
 <meta name="robots" content="noindex">
 <title>Ray K. · AI agents that can't act without your yes</title>
 <meta name="description" content="Ray K. builds AI agents that do real work and can't send anything until a person approves it. Two working demos run in your browser.">
-<meta name="color-scheme" content="light">
 <meta name="theme-color" content="#ece5d4">
+<script>
+// The one line to change once a ground is chosen. ?theme=dark or ?theme=light overrides it.
+var DEFAULT_THEME = 'light';
+(function () {
+  var q = new URLSearchParams(location.search).get('theme');
+  var theme = q === 'dark' || q === 'light' ? q : DEFAULT_THEME;
+  document.documentElement.dataset.theme = theme;
+  document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#191613' : '#ece5d4';
+})();
+</script>
 <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
 <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -24,7 +33,7 @@
 <div class="paper" aria-hidden="true"></div>
 <div class="stage" id="stage-wrap" aria-hidden="true">
   <canvas id="stage"></canvas>
-  <img class="poster" id="poster" src="assets/blob-poster-1200.webp" alt="" width="1200" height="900" decoding="async">
+  <img class="poster" id="poster" data-themed src="assets/work/light/blob-poster-1200.webp" alt="" width="1200" height="900" decoding="async">
 </div>
 
 <header class="bar">
@@ -67,7 +76,6 @@
 
 <section class="sec gate" id="approval" aria-labelledby="approval-title">
   <header class="sec-head">
-    <p class="sec-mark">01 · Approval</p>
     <h2 class="h2" id="approval-title">Three drafts are waiting for you.</h2>
     <p class="sec-lede">The agent wrote them. It can ask for approval, check on it and collect the approved text. It has no tool that can approve, so an instruction hidden in a stranger's email has nothing to pull.</p>
   </header>
@@ -88,8 +96,8 @@
 </section>
 
 <section class="sec sorter" id="sorting" aria-labelledby="sorting-title">
+  <div class="anchor-sort" id="anchor-sort" aria-hidden="true"></div>
   <header class="sec-head">
-    <p class="sec-mark">02 · Sorting</p>
     <h2 class="h2" id="sorting-title">Not everything needs a language model.</h2>
     <p class="sec-lede">This classifier sorts a customer message into one of 150 pigeonholes, in your browser, with nothing sent to a server. When it isn't sure, the message goes to the tray for a person. It knows banking, travel, home and small talk, because that is what its public training set covers.</p>
   </header>
@@ -130,15 +138,13 @@
 
 <section class="sec work" id="work" aria-labelledby="work-title">
   <header class="sec-head">
-    <p class="sec-mark">03 · Work</p>
     <h2 class="h2" id="work-title">What I've built.</h2>
     <p class="sec-lede">These are drawings, made by the same code that draws the top of this page. The production systems live inside companies and can't be shown.</p>
   </header>
   <ol class="pieces">
     <li class="piece">
-      <figure class="piece-fig"><img src="assets/work/mcp-layer-1200.webp" srcset="assets/work/mcp-layer-1200.webp 1200w, assets/work/mcp-layer-2400.webp 2400w" sizes="(max-width: 900px) 92vw, 44vw" width="2400" height="1800" loading="lazy" decoding="async" alt="A pencil drawing: the blob in the centre, with thin threads running out to six small scribbled tiles."></figure>
+      <figure class="piece-fig"><img data-themed src="assets/work/light/mcp-layer-1200.webp" srcset="assets/work/light/mcp-layer-1200.webp 1200w, assets/work/light/mcp-layer-2400.webp 2400w" sizes="(max-width: 900px) 92vw, 44vw" width="2400" height="1800" loading="lazy" decoding="async" alt="A pencil drawing: the blob in the centre, with thin threads running out to six small scribbled tiles."></figure>
       <div class="piece-copy">
-        <p class="piece-mark">Six tiles</p>
         <h3>An MCP layer that 200+ people use every day</h3>
         <p>A VS Code extension and MCP server that connect an AI assistant to Jira, Confluence, GitHub, Jenkins, Snyk and OpenShift at a large financial services company. In production on 12+ teams. Over 10,000 hours of manual story writing saved so far.</p>
         <p class="facts">MCP · VS Code · Jira · Confluence · GitHub · Jenkins · Snyk · OpenShift</p>
@@ -146,36 +152,32 @@
     </li>
     <!-- block: back-office. Remove this whole <li> for a version without the small-business project. -->
     <li class="piece" data-block="back-office">
-      <figure class="piece-fig"><img src="assets/work/back-office-1200.webp" srcset="assets/work/back-office-1200.webp 1200w, assets/work/back-office-2400.webp 2400w" sizes="(max-width: 900px) 92vw, 44vw" width="2400" height="1800" loading="lazy" decoding="async" alt="A pencil drawing: the blob among scribbled trays and stacks of paper, with one sealed envelope held by a gold thread."></figure>
+      <figure class="piece-fig"><img data-themed src="assets/work/light/back-office-1200.webp" srcset="assets/work/light/back-office-1200.webp 1200w, assets/work/light/back-office-2400.webp 2400w" sizes="(max-width: 900px) 92vw, 44vw" width="2400" height="1800" loading="lazy" decoding="async" alt="A pencil drawing: the blob among scribbled trays and stacks of paper, with one sealed envelope held by a gold thread."></figure>
       <div class="piece-copy">
-        <p class="piece-mark">Trays and an envelope</p>
         <h3>The back office of my own small business</h3>
         <p>An agent system that reads email, SMS and WhatsApp, keeps the CRM and task list current, puts commitments on the calendar, fills PDF contracts and files documents. Client replies wait as drafts until a person sends them. It runs every day, for a real business, with real customers on the other end.</p>
         <p class="facts">Email · SMS · WhatsApp · CRM · Calendar · PDF forms · Filing</p>
       </div>
     </li>
     <li class="piece">
-      <figure class="piece-fig"><img src="assets/work/voice-agent-1200.webp" srcset="assets/work/voice-agent-1200.webp 1200w, assets/work/voice-agent-2400.webp 2400w" sizes="(max-width: 900px) 92vw, 44vw" width="2400" height="1800" loading="lazy" decoding="async" alt="A pencil drawing: the blob with its eyes closed, listening, while a strand of digits shaped like a sound wave flows to it from a scribbled telephone handset."></figure>
+      <figure class="piece-fig"><img data-themed src="assets/work/light/voice-agent-1200.webp" srcset="assets/work/light/voice-agent-1200.webp 1200w, assets/work/light/voice-agent-2400.webp 2400w" sizes="(max-width: 900px) 92vw, 44vw" width="2400" height="1800" loading="lazy" decoding="async" alt="A pencil drawing: the blob with its eyes closed, listening, while a strand of digits shaped like a sound wave flows to it from a scribbled telephone handset."></figure>
       <div class="piece-copy">
-        <p class="piece-mark">Eyes closed, listening</p>
         <h3>A voice agent you can phone</h3>
         <p>A personal experiment in Python with Twilio and a real-time speech model. It holds a conversation and calls tools to book appointments. A pause that is fine in chat makes a phone call feel broken, so latency drove every design choice. A working experiment, not a product.</p>
         <p class="facts">Python · Twilio · Real-time speech · Tool calls</p>
       </div>
     </li>
     <li class="piece">
-      <figure class="piece-fig"><img src="assets/work/approval-gate-1200.webp" srcset="assets/work/approval-gate-1200.webp 1200w, assets/work/approval-gate-2400.webp 2400w" sizes="(max-width: 900px) 92vw, 44vw" width="2400" height="1800" loading="lazy" decoding="async" alt="A pencil drawing: the blob waiting behind a small scribbled gate with a gold latch, holding a draft."></figure>
+      <figure class="piece-fig"><img data-themed src="assets/work/light/approval-gate-1200.webp" srcset="assets/work/light/approval-gate-1200.webp 1200w, assets/work/light/approval-gate-2400.webp 2400w" sizes="(max-width: 900px) 92vw, 44vw" width="2400" height="1800" loading="lazy" decoding="async" alt="A pencil drawing: the blob waiting behind a small scribbled gate with a gold latch, holding a draft."></figure>
       <div class="piece-copy">
-        <p class="piece-mark">The gate</p>
         <h3>approval-gate</h3>
         <p>The MCP server behind the first demo. Three tools: request approval, check on it, claim the approved text. None of them approves. Requests carry an idempotency key, approved text can be claimed once, and the log is append-only and hash-chained so a casual edit shows up.</p>
         <p class="facts">TypeScript · 15 tests · CI · Open source</p>
       </div>
     </li>
     <li class="piece">
-      <figure class="piece-fig"><img src="assets/work/intent-router-1200.webp" srcset="assets/work/intent-router-1200.webp 1200w, assets/work/intent-router-2400.webp 2400w" sizes="(max-width: 900px) 92vw, 44vw" width="2400" height="1800" loading="lazy" decoding="async" alt="A pencil drawing: the blob sorting a stream of notes into many small pigeonholes, with one note dropping into the tray below."></figure>
+      <figure class="piece-fig"><img data-themed src="assets/work/light/intent-router-1200.webp" srcset="assets/work/light/intent-router-1200.webp 1200w, assets/work/light/intent-router-2400.webp 2400w" sizes="(max-width: 900px) 92vw, 44vw" width="2400" height="1800" loading="lazy" decoding="async" alt="A pencil drawing: the blob sorting a stream of notes into many small pigeonholes, with one note dropping into the tray below."></figure>
       <div class="piece-copy">
-        <p class="piece-mark">The pigeonholes</p>
         <h3>intent-router</h3>
         <p>Three models on CLINC150, judged by the one number that matters when a classifier acts on its own: how often it makes a wrong move. The hand-written NumPy network is in there too, with its gradients checked against a numerical estimate. It loses to logistic regression, which is the honest result.</p>
         <p class="facts">Python · NumPy · CLINC150 · Open source</p>
@@ -187,13 +189,15 @@
 
 <section class="sec hire" id="hire" aria-labelledby="hire-title">
   <div class="sec-inner hire-inner">
-  <p class="sec-mark">04 · Hire</p>
+  <div class="hire-copy">
   <h2 class="h2" id="hire-title">How I work.</h2>
   <div class="hire-grid">
     <p>Six years of software development, mostly in regulated financial services. AWS Certified Solutions Architect. BASc, University of Waterloo. I work in the harness you already use, or build one from scratch.</p>
     <p>We agree on a scope and a fixed price. You fund a milestone. You get working software, tests, a written handover and a recorded walkthrough. <span data-block="availability">I work evenings and weekends, Mountain Time.</span></p>
   </div>
   <a class="btn btn-solid btn-big" data-profile href="#hire">Work with me</a>
+  </div>
+  <div class="anchor-hire" id="anchor-hire" aria-hidden="true"></div>
   <footer class="foot">
     <span>Ray K. · stingraydeveloper</span>
     <a href="https://github.com/stingraydeveloper/approval-gate">approval-gate</a>
@@ -203,6 +207,14 @@
 </section>
 
 </main>
+
+<script>
+// Before any lazy image starts: each theme has its own set of drawings.
+if (document.documentElement.dataset.theme === 'dark') document.querySelectorAll('img[data-themed]').forEach(function (img) {
+  if (img.srcset) img.srcset = img.srcset.replace(/\/light\//g, '/dark/');
+  img.src = img.src.replace('/light/', '/dark/');
+});
+</script>
 
 <script src="vendor/gsap.min.js" defer></script>
 <script src="vendor/ScrollTrigger.min.js" defer></script>
