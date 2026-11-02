@@ -56,14 +56,18 @@ img { max-width: 100%; height: auto; }
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='320'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
   background-size: 320px 320px; mix-blend-mode: overlay;
 }
+.film .grain { display: none; }
 .flash { position: fixed; inset: 0; z-index: 4; pointer-events: none; opacity: 0; background: radial-gradient(ellipse 60% 60% at 62% 44%, rgba(255, 238, 214, .95), rgba(255, 238, 214, 0) 70%); }
 
 /* ---------- header ---------- */
 .bar {
   position: fixed; inset: 0 0 auto 0; z-index: 10;
   display: flex; align-items: center; justify-content: space-between; gap: 24px;
-  padding: 20px var(--gutter);
+  padding: 20px var(--gutter) 36px;
+  background: linear-gradient(180deg, rgba(20, 21, 22, 1) 0%, rgba(20, 21, 22, .96) 45%, rgba(20, 21, 22, .6) 75%, rgba(20, 21, 22, 0) 100%);
+  pointer-events: none;
 }
+.bar > * { pointer-events: auto; }
 .mark { display: flex; align-items: baseline; gap: 12px; white-space: nowrap; }
 .nav a { white-space: nowrap; }
 .nav-short { display: none; }
@@ -248,14 +252,18 @@ html.lenis, html.lenis body { height: auto; }
   .hero-object { min-height: 46svh; }
   .plate { display: none; }
   .scroll-cue { display: none; }
-  .gate-grid, .sorter-grid, .piece, .hire-grid { grid-template-columns: minmax(0, 1fr); }
-  .record { display: contents; }
-  .anchor-slot { height: clamp(180px, 28vh, 260px); order: 0; }
+  .sorter-grid, .piece, .hire-grid { grid-template-columns: minmax(0, 1fr); }
+  /* the gate on a phone: shutter and counter first, then the heading, then the proofs */
+  .gate { display: grid; row-gap: 18px; padding-top: clamp(72px, 10vh, 120px); }
+  .gate-grid, .record { display: contents; }
+  .anchor-slot { order: 0; height: clamp(200px, 32vh, 280px); }
   .counter { order: 1; }
-  .proofs { order: 2; }
-  #self-approve { order: 3; justify-self: start; }
-  .record-title { order: 4; }
-  .log { order: 5; }
+  .gate > .sec-head { order: 2; margin-top: 28px; }
+  .proofs { order: 3; margin-top: 10px; }
+  #self-approve { order: 4; justify-self: start; }
+  .record-title { order: 5; }
+  .log { order: 6; }
+  .gate > .sec-foot { order: 7; }
   .piece:nth-child(even) .piece-fig { order: 0; }
   .proof:nth-child(2), .proof:nth-child(3) { margin-left: 0; }
   .proof-head { padding-right: 0; }

@@ -292,6 +292,7 @@ export function createStage(canvas, options = {}) {
   const composer = new EffectComposer(renderer, target);
   composer.addPass(new RenderPass(scene, camera));
   const grain = new ShaderPass(GrainShader);
+  grain.uniforms.uAmount.value = options.grain ?? 0.03;
   composer.addPass(grain);
   composer.addPass(new OutputPass());
 

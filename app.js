@@ -11,12 +11,14 @@ if (G && window.SplitText) G.registerPlugin(window.SplitText);
 const motion = !!(G && ST) && !reduced;
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const film = new URLSearchParams(location.search).has('film'); // recording mode: quieter grain
+if (film) document.documentElement.classList.add('film');
 
 // ---------- the stage ----------
 const stageWrap = $('#stage-wrap');
 let stage = null;
 try {
-  stage = createStage($('#stage'), { reduced });
+  stage = createStage($('#stage'), { reduced, grain: film ? 0.008 : 0.03 });
 } catch (e) {
   stage = null;
 }
