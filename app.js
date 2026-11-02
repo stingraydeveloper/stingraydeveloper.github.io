@@ -88,10 +88,12 @@ function setSequence(p) {
   for (const li of labels) showLabel(li, p >= parseFloat(li.dataset.at));
   showClose(p >= 0.9);
 }
-// labels follow their anchors on the horse
+// labels follow their anchors on the horse (on phones they are a static strip under it)
+const phoneLabels = matchMedia('(max-width: 900px)');
 function placeLabels() {
   requestAnimationFrame(placeLabels);
   if (!stage) return;
+  if (phoneLabels.matches) { for (const li of labels) { li.style.left = ''; li.style.top = ''; li.style.visibility = ''; } return; }
   for (const li of labels) {
     const pt = stage.project(parseFloat(li.dataset.u), parseFloat(li.dataset.v));
     li.style.left = `${pt.x.toFixed(1)}px`;

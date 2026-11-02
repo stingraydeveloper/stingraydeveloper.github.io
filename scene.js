@@ -17,8 +17,15 @@ export const FRAMES = [
 ];
 export const REST = 6, HEAD_UP = 7, STRAIN = 8;
 export const IMG_W = 1920, IMG_H = 1200;
-export const CORE_UV = [0.615, 0.49];
-export const EYE_UV = [0.43, 0.19];
+// where the heart and the eye sit in each frame (image uv, y down); the head moves in 7 and 8
+const REST_CORE = [0.623, 0.48], REST_EYE = [0.427, 0.183];
+export const ANCHORS = {
+  0: { core: REST_CORE, eye: REST_EYE }, 1: { core: REST_CORE, eye: REST_EYE }, 2: { core: REST_CORE, eye: REST_EYE },
+  3: { core: REST_CORE, eye: REST_EYE }, 4: { core: REST_CORE, eye: REST_EYE }, 5: { core: REST_CORE, eye: REST_EYE },
+  6: { core: REST_CORE, eye: REST_EYE },
+  7: { core: [0.625, 0.48], eye: [0.443, 0.123] },
+  8: { core: [0.604, 0.49], eye: [0.339, 0.279] },
+};
 export const FOCUS_UV = [0.6, 0.47];   // what the cover-crop keeps when the frame is narrow
 
 const VERT = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
@@ -40,9 +47,23 @@ const FRAG = `
     vec3 a = texture2D(tA, iuv).rgb;
     vec3 b = texture2D(tB, iuvB).rgb;
     vec3 img = mix(a, b, uMix);
-    // outside the image (portrait band mode) there is only the bench
+    // outside the image there is only the bench; the left edge fades over 9% so the floor has no seam
+    float inl = smoothstep(0.0, 0.09, iuv.x);
     vec2 inb = smoothstep(0.0, 0.025, iuv) * smoothstep(0.0, 0.025, 1.0 - iuv);
-    img = mix(uBg, img, inb.x * inb.y);
+    img = mix(uBg, img, inl * inb.y * smoothstep(0.0, 0.025, 1.0 - iuv.x));
+    // the photograph's own backdrop and floor are a neutral dark grey; they become the page's
+    // graphite so the still has no edge. Leather is warm and metal is bright, so both survive.
+    float lum0 = dot(img, vec3(0.3, 0.59, 0.11));
+    float sat0 = max(img.r, max(img.g, img.b)) - min(img.r, min(img.g, img.b));
+    float bgness = (1.0 - smoothstep(0.11, 0.34, lum0)) * (1.0 - smoothstep(0.012, 0.045, sat0));
+    // the key's spill (top left) and the bench (bottom) are neutral but brighter: pull them too
+    // the spill is tungsten-tinted, so left of the muzzle it is keyed on brightness alone
+    float spill = smoothstep(0.34, 0.08, iuv.x) * smoothstep(0.33, 0.68, iuv.y);
+    float bench = smoothstep(0.2, 0.0, iuv.y);
+    float wide = (1.0 - smoothstep(0.03, 0.09, sat0)) * (1.0 - smoothstep(0.22, 0.55, lum0)) * bench;
+    wide = max(wide, spill * (1.0 - smoothstep(0.45, 0.9, lum0)));
+    bgness = max(bgness, wide);
+    img = mix(img, uBg, bgness);
     // the amber core and eye are keyed by warmth, so they stay lit while the body is still dark
     float lum = dot(img, vec3(0.3, 0.59, 0.11));
     float warmth = clamp((img.r - img.b) * 2.2, 0.0, 1.0);
@@ -98,7 +119,7 @@ export function createStage(canvas, options = {}) {
     if (textures.has(i)) return textures.get(i);
     const p = new Promise((resolve) => {
       loader.load(`assets/horse/f${i}-${size}.jpg`, (t) => {
-        t.colorSpace = THREE.SRGBColorSpace;
+        t.colorSpace = THREE.NoColorSpace;   // sampled raw; the shader writes display values directly
         t.minFilter = THREE.LinearFilter;
         t.generateMipmaps = false;
         t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
@@ -114,10 +135,11 @@ export function createStage(canvas, options = {}) {
   const uniforms = {
     tA: { value: blank }, tB: { value: blank }, uMix: { value: 0 },
     uScale: { value: new THREE.Vector2(1, 1) }, uOffset: { value: new THREE.Vector2(0, 0) },
-    uReveal: { value: reduced ? 1 : 0 }, uCore: { value: new THREE.Vector2(CORE_UV[0], 1 - CORE_UV[1]) },
-    uEye: { value: new THREE.Vector2(EYE_UV[0], 1 - EYE_UV[1]) }, uCoreLevel: { value: 0.55 }, uEyeLevel: { value: 1.0 },
+    uReveal: { value: reduced ? 1 : 0 }, uCore: { value: new THREE.Vector2(REST_CORE[0], 1 - REST_CORE[1]) },
+    uEye: { value: new THREE.Vector2(REST_EYE[0], 1 - REST_EYE[1]) }, uCoreLevel: { value: 0.55 }, uEyeLevel: { value: 1.0 },
     uDrop: { value: 0 }, uTime: { value: 0 }, uGrain: { value: options.grain ?? 0.012 }, uFeather: { value: 0.0 },
-    uBg: { value: new THREE.Color(0x141516) }, uLift: { value: 0.06 }, uAspectFix: { value: IMG_W / IMG_H },
+    // raw display-space graphite, the same value the page's CSS uses, so the quad has no edge
+    uBg: { value: new THREE.Vector3(20 / 255, 21 / 255, 22 / 255) }, uLift: { value: 0.06 }, uAspectFix: { value: IMG_W / IMG_H },
   };
   // DoubleSide: the camera's y is flipped to CSS space and the quad's y scale is negative, which
   // together invert the winding once more than three's determinant check expects.
@@ -172,8 +194,8 @@ export function createStage(canvas, options = {}) {
     const w = r.w * (1 + grow), h = r.h * (1 + grow);
     quad.position.set(r.cx, r.cy, 0);
     quad.scale.set(w, -h, 1);
-    uniforms.uFeather.value = t > 0 ? 0.3 : 0.0;
-    uniforms.uLift.value = 0.06 + 0.07 * t;
+    uniforms.uFeather.value = t > 0 ? 0.3 : 0.06;
+    uniforms.uLift.value = 0.0;
     // Landscape quads: cover the quad with the image, keeping FOCUS_UV in view.
     // Portrait quads (phones): show the horse as a band in the lower part, above which the copy sits.
     const qa = w / h, ia = IMG_W / IMG_H;
@@ -189,11 +211,11 @@ export function createStage(canvas, options = {}) {
       if (hb >= 1) { sy = 1 / hb; oy = THREE.MathUtils.clamp(fy - sy * 0.5, 0, 1 - sy); }
       else { sy = 1 / hb; oy = 0; }            // shorter than the quad: sit on the bench, dark above
     } else {
-      const zoom = 1.18;                       // how much of the image width the band shows: 1/zoom
+      const zoom = 1.04;                       // the whole horse, reins included
       sx = 1 / zoom;
-      ox = THREE.MathUtils.clamp(0.58 - sx * 0.5, 0, 1 - sx);
+      ox = THREE.MathUtils.clamp(0.6 - sx * 0.5, 0, 1 - sx);
       const hb = Math.min(1, (qa / ia) * zoom); // band height as a fraction of the quad
-      const v0 = t > 0 ? (1 - hb) * 0.5 : -0.03; // low in the hero (hooves just past the edge), centred in the slot
+      const v0 = t > 0 ? (1 - hb) * 0.5 : 0.15; // above the label strip in the hero, centred in the slot
       sy = 1 / hb;
       oy = -v0 / hb;
     }
@@ -227,6 +249,11 @@ export function createStage(canvas, options = {}) {
     uniforms.tA.value = ta || blank;
     uniforms.tB.value = tb || ta || blank;
     uniforms.uMix.value = tb === ta ? 0 : state.mix;
+    // the heart and eye follow the frame that is actually showing
+    const aA = ANCHORS[state.frame] || ANCHORS[REST], aB = ANCHORS[state.frameB] || aA;
+    const m = tb === ta ? 0 : state.mix;
+    uniforms.uCore.value.set(aA.core[0] + (aB.core[0] - aA.core[0]) * m, 1 - (aA.core[1] + (aB.core[1] - aA.core[1]) * m));
+    uniforms.uEye.value.set(aA.eye[0] + (aB.eye[0] - aA.eye[0]) * m, 1 - (aA.eye[1] + (aB.eye[1] - aA.eye[1]) * m));
     uniforms.uReveal.value = state.reveal;
     uniforms.uCoreLevel.value = state.core;
     uniforms.uEyeLevel.value = state.eye;
@@ -245,8 +272,21 @@ export function createStage(canvas, options = {}) {
     if (document.hidden) running = false; else if (!running) { running = true; timer.reset(); render(); }
   });
 
-  // first frames first, then the rest in the order the sequence needs them
-  want(0).then(() => want(REST)).then(() => { [1, 2, 3, 4, 5, HEAD_UP, STRAIN].forEach((i) => want(i)); });
+  // first frames first, then the rest in the order the sequence needs them; the form resolves on
+  // its own as soon as the first frame is in, so the first screen is never empty
+  want(0).then(() => {
+    if (!reduced) tweenReveal();
+    return want(REST);
+  }).then(() => { [1, 2, 3, 4, 5, HEAD_UP, STRAIN].forEach((i) => want(i)); });
+  function tweenReveal() {
+    const t0 = performance.now();
+    const step = (now) => {
+      const u = Math.min(1, (now - t0) / 1800);
+      state.reveal = Math.max(state.reveal, u * u * (3 - 2 * u));
+      if (u < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
 
   // ---- tiny tween helper ----
   function tween(obj, key, to, ms, easing = (t) => t) {
@@ -284,11 +324,10 @@ export function createStage(canvas, options = {}) {
     setSequence(p) {
       state.seq = p;
       if (busy) return;
-      const revealEnd = 0.2;
-      state.reveal = reduced ? 1 : THREE.MathUtils.clamp(p / revealEnd, 0, 1);
-      // frames 0..6 across [0.2, 0.92]
+      if (reduced) state.reveal = 1;
+      // frames 0..6 across [0, 0.9]; the closing beat uses the last tenth
       const steps = REST;          // 6 transitions
-      const q = THREE.MathUtils.clamp((p - revealEnd) / (0.92 - revealEnd), 0, 1) * steps;
+      const q = THREE.MathUtils.clamp(p / 0.9, 0, 1) * steps;
       const i = Math.min(steps - 1, Math.floor(q));
       const f = q - i;             // position inside this transition
       // each piece lands in the first 55% of its slot, then holds
@@ -296,7 +335,7 @@ export function createStage(canvas, options = {}) {
       const eased = 1 - Math.pow(1 - k, 3);
       if (q >= steps) { state.frame = REST; state.frameB = REST; state.mix = 0; state.drop = 0; }
       else { state.frame = i; state.frameB = i + 1; state.mix = eased; state.drop = (1 - eased) * 0.012; }
-      state.core = 0.4 + 0.25 * state.reveal;
+      state.core = 0.4 + 0.25 * Math.min(1, state.reveal + p);
       want(Math.min(REST, i + 1));
     },
     // the demo states
