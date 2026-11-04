@@ -8,14 +8,8 @@
 <meta name="description" content="Ray K. builds AI agents that do real work and can't send anything until a person approves it. Two working demos run in your browser.">
 <meta name="theme-color" content="#ece5d4">
 <script>
-// The one line to change once a ground is chosen. ?theme=dark or ?theme=light overrides it.
-var DEFAULT_THEME = 'light';
-(function () {
-  var q = new URLSearchParams(location.search).get('theme');
-  var theme = q === 'dark' || q === 'light' ? q : DEFAULT_THEME;
-  document.documentElement.dataset.theme = theme;
-  document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#191613' : '#ece5d4';
-})();
+// The published site is the light ground. The dark ground lives on the dark-version branch.
+document.documentElement.dataset.theme = 'light';
 </script>
 <link rel="preload" as="font" type="font/woff2" href="fonts/sentient.woff2" crossorigin>
 <link rel="preload" as="font" type="font/woff2" href="fonts/cabinet-grotesk.woff2" crossorigin>
@@ -204,14 +198,6 @@ var DEFAULT_THEME = 'light';
 </section>
 
 </main>
-
-<script>
-// Before any lazy image starts: each theme has its own set of drawings.
-if (document.documentElement.dataset.theme === 'dark') document.querySelectorAll('img[data-themed]').forEach(function (img) {
-  if (img.srcset) img.srcset = img.srcset.replace(/\/light\//g, '/dark/');
-  img.src = img.src.replace('/light/', '/dark/');
-});
-</script>
 
 <script src="vendor/gsap.min.js" defer></script>
 <script src="vendor/ScrollTrigger.min.js" defer></script>
