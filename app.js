@@ -166,7 +166,8 @@ function driveDock() {
     want = phone ? smooth01(BAR_LINE - 16, BAR_LINE + 44, hire.top) : 1;
   } else if (hasSort && sort.top < H * 0.66) {
     name = 'sort'; target = sort;
-    want = smooth01(BAR_LINE, BAR_LINE + 70, sort.top);
+    // full strength while it sits beside the heading; it fades only as it passes under the bar
+    want = smooth01(BAR_LINE - 30, BAR_LINE + 24, sort.top);
     gaze = rackGazePoint();
     lead = { x: sort.left + sort.width * 0.16, y: sort.top + sort.height * 1.0 };
   } else {
@@ -251,7 +252,7 @@ const spy = new IntersectionObserver((entries) => {
     navLinks.forEach((a) => a.classList.toggle('is-current', a.dataset.nav === en.target.id));
   }
 }, { rootMargin: '-40% 0px -55% 0px' });
-['approval', 'sorting', 'work', 'hire'].forEach((id) => { const el = document.getElementById(id); if (el) spy.observe(el); });
+['hero', 'approval', 'sorting', 'work', 'hire'].forEach((id) => { const el = document.getElementById(id); if (el) spy.observe(el); });
 
 // ---------- the register: numbered, append-only, hash-chained ----------
 const log = $('#log');
